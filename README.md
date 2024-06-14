@@ -1,4 +1,4 @@
-# LoGaQuizz Neo 🎓 
+# LoGaQuizz Neo 🎓
 
 Aplicación educativa interactiva y versátil que mejora la experiencia de aprendizaje de los estudiantes y facilita las tareas de enseñanza para los profesores en un entorno digital
 
@@ -22,21 +22,21 @@ El proyecto se divide en dos partes principales:
 
 ### 🚀 Frontend
 
-1. **Navega al directorio del frontend** 
+1. **Navega al directorio del frontend**
    ```
-   cd LoGaQuizz_Neo/frontend
+   cd AgoraEval/frontend
    ```
 
-2. **Instala las dependencias de React** 
+2. **Instala las dependencias de React**
    ```
    npm install
    ```
 
 ### 🔌 Backend
 
-1. **Navega al directorio del backend** 
+1. **Navega al directorio del backend**
    ```
-   cd LoGaQuizz_Neo/backend
+   cd AgoraEval/backend
    ```
 
 2. **Opción A: Uso de un entorno virtual (recomendado)**
@@ -59,11 +59,11 @@ El proyecto se divide en dos partes principales:
    ```
 
 ## 💡 Uso
-Para usar "LoGaQuizz_Neo", debes tener ambos servidores, el del frontend y el del backend, corriendo en paralelo. 
+Para usar "AgoraEval", debes tener ambos servidores, el del frontend y el del backend, corriendo en paralelo.
 
 ### 🏁 Puesta en marcha
 
-1. **Iniciar el servidor de backend**  
+1. **Iniciar el servidor de backend**
    Navega al directorio `backend` y ejecuta el servidor FastAPI con:
    ```bash
    python app/main.py
@@ -89,7 +89,7 @@ Para usar "LoGaQuizz_Neo", debes tener ambos servidores, el del frontend y el de
 
 ### 📊 Funcionalidades
 
-La aplicación "LoGaQuizz_Neo" permite:
+La aplicación "AgoraEval" permite:
 
 - **Gestión de pruebas**: Ver, crear, editar y eliminar pruebas.
 - **Gestión de jugadores**: Ver y eliminar jugadores.
@@ -102,7 +102,7 @@ Asegúrate de que todos los usuarios tengan acceso a la red adecuada y comprenda
 
 ![Imagen de launcher](images/Launcher.png)
 
-Se ha simplificado el proceso de instalación y ejecución con un launcher que puedes descargar desde la sección de `Releases`.  
+Se ha simplificado el proceso de instalación y ejecución con un launcher que puedes descargar desde la sección de `Releases`.
 Para utilizarlo, siga las siguientes instrucciones:
 
 1. **Descargar el Launcher**
