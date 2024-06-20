@@ -58,13 +58,21 @@ class JSON_Login(BaseModel):
 
 class JSON_SelectOptions(BaseModel):
 	title: str
-	isCorrect: bool
+
+	def to_dict(self):
+		return {
+			"title": self.title
+		}
+
+	@classmethod
+	def from_dict(cls, data):
+		return cls(**data)
 
 class JSON_Question_Input(BaseModel):
 	title: str
 	image: Optional[str]
 	questionType: Literal['text', 'number', 'select']
-	selectOptions: Json[List[str]]
+	selectOptions: List[JSON_SelectOptions]
 
 class JSON_AssessmentInstance_Input(BaseModel):
 	title: str
@@ -74,7 +82,7 @@ class JSON_Assessment_Input(BaseModel):
 	title: str
 	image: Optional[str]
 	questions: List[JSON_Question_Input]
-	assessmentInstances: List[JSON_AssessmentInstance_Input]
+	# assessmentInstances: List[JSON_AssessmentInstance_Input]
 
 # Modelos de los JSON de salida
 # class JSON_Solution_Output(BaseModel):
@@ -252,8 +260,7 @@ async def get_assessment_by_ID(token: str, ID: int):
 				image=question.image,
 				questionType=question.questionType,
 				questionOrder=question.questionOrder,
-				selectOptions=question.selectOptions
-			) for question in assessment.questions
+				selectOptions=[JSON_SelectOptions(title=option['title']) for option in question.selectOptions]			) for question in assessment.questions
 			]
 
 		response = JSON_Assessment_Output(
@@ -348,7 +355,7 @@ async def create_assessment(token: str, input_data: JSON_Assessment_Input):
 				image=question_data.image,
 				questionType=question_data.questionType,
 				questionOrder=index,
-				selectOptions=question_data.selectOptions
+				selectOptions=[option.to_dict() for option in question_data.selectOptions]
 			)
 			session.add(new_question)
 			session.flush()
@@ -489,7 +496,7 @@ async def get_results_by_assessmentInstance(token: str, ID: int, ASSESSMENTINSTA
 				image=question.image,
 				questionType=question.questionType,
 				questionOrder=question.questionOrder,
-				selectOptions=question.selectOptions
+				selectOptions= [JSON_SelectOptions.from_dict(option) for option in question.selectOptions]
 			) for question in assessment.questions
 		]
 
