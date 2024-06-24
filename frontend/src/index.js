@@ -4,13 +4,13 @@ import "./index.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import reportWebVitals from "./reportWebVitals";
 import Login from "./login";
-import MenuTest from "./menu_test";
+import MenuAssessment from "./menu_assessment";
 import MenuJugadores from "./menu_jugadores";
-import DetalleTest from "./test_view";
-import EditTest from "./test_edit";
-import CreateTest from "./test_create";
+import DetalleAssessment from "./assessment_view";
+import EditAssessment from "./assessment_edit";
+import CreateAssessment from "./assessment_create";
 import PlayerSummary from "./player_summary";
-import TestSummary from "./test_summary";
+import AssessmentSummary from "./assessment_summary";
 import TestGameDetails from "./game_by_test";
 import PlayerGameDetails from "./game_by_player";
 import Initial from "./initial";
@@ -26,15 +26,15 @@ root.render(
 			<Routes>
 				<Route path="/" element={<Initial />} />
 				<Route path="/login" element={<Login />} />
-				<Route path="/menu/test" element={<MenuTest />} />
+				<Route path="/menu/assessment" element={<MenuAssessment />} />
 				<Route path="/menu/players" element={<MenuJugadores />} />
-				<Route path="/menu/test/:id" element={<DetalleTest />} />
-				<Route path="/menu/test/:id/edit" element={<EditTest />} />
-				<Route path="/menu/test/new" element={<CreateTest />} />
+				<Route path="/menu/assessment/:id" element={<DetalleAssessment />} />
+				<Route path="/menu/assessment/:id/edit" element={<EditAssessment />} />
+				<Route path="/menu/assessment/new" element={<CreateAssessment />} />
 				<Route path="/menu/player/:id" element={<PlayerSummary />} />
-				<Route path="/menu/test/:id/games" element={<TestSummary />} />
+				<Route path="/menu/assessment/:id/games" element={<AssessmentSummary />} />
 				<Route
-					path="/menu/test/:testid/game/:gameid"
+					path="/menu/assessment/:assessmentid/game/:gameid"
 					element={<TestGameDetails />}
 				/>
 				<Route
@@ -42,7 +42,7 @@ root.render(
 					element={<PlayerGameDetails />}
 				/>
 				<Route path="/error" element={<ErrorPage />} />
-				<Route path="/play/:testId/admin" element={<PlayAdmin />} />
+				<Route path="/play/:assessmentId/admin" element={<PlayAdmin />} />
 				<Route path="/game/:pin/:name" element={<PlayPlayer />} />
 				{/* Puedes agregar más rutas según sea necesario */}
 			</Routes>

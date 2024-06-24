@@ -24,7 +24,7 @@ function Login() {
 
 			if (response.ok) {
 				localStorage.setItem("token", data.token);
-				navigate("/menu/test");
+				navigate("/menu/assessment");
 			} else {
 				setError(data.detail || "Error de autenticación");
 			}
