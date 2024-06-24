@@ -72,7 +72,8 @@ class JSON_Question_Input(BaseModel):
 	title: str
 	image: Optional[str]
 	questionType: Literal['text', 'number', 'select']
-	selectOptions: List[JSON_SelectOptions]
+	questionOrder: int
+	selectOptions: Optional[List[JSON_SelectOptions]]
 
 class JSON_AssessmentInstance_Input(BaseModel):
 	title: str
@@ -82,7 +83,20 @@ class JSON_Assessment_Input(BaseModel):
 	title: str
 	image: Optional[str]
 	questions: List[JSON_Question_Input]
-	# assessmentInstances: List[JSON_AssessmentInstance_Input]
+
+class JSON_Question_Edit_Input(BaseModel):
+	id: Optional[int]
+	title: Optional[str]
+	image: Optional[str]
+	questionType: Literal['text', 'number', 'select']
+	questionOrder: Optional[int]
+	selectOptions: Optional[List[JSON_SelectOptions]]
+
+class JSON_Assessment_Edit_Input(BaseModel):
+	title: Optional[str]
+	image: Optional[str]
+	questions: Optional[List[JSON_Question_Edit_Input]]
+	deletedQuestionsIds: Optional[List[int]]
 
 # Modelos de los JSON de salida
 # class JSON_Solution_Output(BaseModel):
@@ -347,20 +361,18 @@ async def create_assessment(token: str, input_data: JSON_Assessment_Input):
 		if not input_data.questions:
 			raise HTTPException(status_code=400, detail="No hay pregunta_raws para guardar")
 
-		index = 1
 		for question_data in input_data.questions:
 			new_question = Question(
 				assessment_id=new_assessment.id,
 				title=question_data.title,
 				image=question_data.image,
 				questionType=question_data.questionType,
-				questionOrder=index,
+				questionOrder=question_data.questionOrder,
 				selectOptions=[option.to_dict() for option in question_data.selectOptions]
 			)
 			session.add(new_question)
 			session.flush()
 
-			index += 1
 		session.commit()
 		return {"detail": "Assessment creado correctamente con ID: {}".format(new_assessment.id)}
 	except HTTPException as e:
@@ -372,42 +384,73 @@ async def create_assessment(token: str, input_data: JSON_Assessment_Input):
 		session.close()
 
 @app.put("/assessment/{ID}/edit/token={token}")
-async def edit_assessment(token: str, ID: int, input_data: JSON_Assessment_Input):
+async def edit_assessment(token: str, ID: int, input_data: JSON_Assessment_Edit_Input):
 	await is_admin(token)
 	try:
-		new_assessment = Assessment(
-			title=input_data.title,
-			image=input_data.image,
-			createdAt=datetime.now(),
-			updatedAt=datetime.now()
-		)
-		session.add(new_assessment)
-		session.flush()
-
-		if not input_data.questions:
-			raise HTTPException(status_code=400, detail="No hay preguntas para guardar")
-
-		for question_data in input_data.questions:
-			if not question_data.answers:
-				raise HTTPException(status_code=400, detail="No hay respuestas para guardar")
-
-			new_question = Question(
-				assessment_id=new_assessment.id,
-				title=question_data.title,
-				image=question_data.image,
-				questionType=question_data.questionType,
-				questionOrder=question_data.questionOrder,
-				selectOptions=question_data.selectOptions
+		assessment = session.query(Assessment).filter(Assessment.id == ID).first()
+		if assessment is None:
+			raise HTTPException(status_code=404, detail="Assessment no encontrado")
+		if assessment.assessmentInstances:
+			new_assessment = Assessment(
+				title=input_data.title,
+				image=input_data.image,
+				createdAt=datetime.now(),
+				updatedAt=datetime.now()
 			)
-			session.add(new_question)
+			session.add(new_assessment)
 			session.flush()
 
-		session.commit()
+			if not input_data.questions:
+				raise HTTPException(status_code=400, detail="No hay preguntas para guardar")
 
+			for question_data in input_data.questions:
+				new_question = Question(
+					assessment_id=new_assessment.id,
+					title=question_data.title,
+					image=question_data.image,
+					questionType=question_data.questionType,
+					questionOrder=question_data.questionOrder,
+					selectOptions=[option.to_dict() for option in question_data.selectOptions]
+				)
+				session.add(new_question)
+				session.flush()
 
-		assessments_to_update = session.query(Assessment).filter(or_(Assessment.id == ID, Assessment.actual_assessment_id == ID)).all()
-		for assessment in assessments_to_update:
-			assessment.actual_assessment_id = new_assessment.id
+			session.commit()
+
+			assessments_to_update = session.query(Assessment).filter(or_(Assessment.id == ID, Assessment.actual_assessment_id == ID)).all()
+			for assessment in assessments_to_update:
+				assessment.actual_assessment_id = new_assessment.id
+		else:
+			if input_data.title:
+				assessment.title = input_data.title
+			if input_data.image:
+				assessment.image = input_data.image
+			if input_data.questions:
+				for question_data in input_data.questions:
+					if question_data.id:
+						question = session.query(Question).filter(Question.id == question_data.id).first()
+						if question:
+							question.title = question_data.title
+							question.image = question_data.image
+							question.questionType = question_data.questionType
+							question.questionOrder = question_data.questionOrder
+							question.selectOptions = [option.to_dict() for option in question_data.selectOptions]
+					else:
+						new_question = Question(
+							assessment_id=assessment.id,
+							title=question_data.title,
+							image=question_data.image,
+							questionType=question_data.questionType,
+							questionOrder=question_data.questionOrder,
+							selectOptions=[option.to_dict() for option in question_data.selectOptions]
+						)
+						session.add(new_question)
+
+			if input_data.deletedQuestionsIds:
+				for question_id in input_data.deletedQuestionsIds:
+					question = session.query(Question).filter(Question.id == question_id).first()
+					if question:
+						session.delete(question)
 
 		session.commit()
 		return {"detail": "Assessment editado correctamente"}
