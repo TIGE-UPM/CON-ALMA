@@ -1,31 +1,55 @@
-import React, { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useRef, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 
-function CreateTest() {
-	const initialTestState = {
+function EditAssessment() {
+	const [formData, setFormData] = useState({
 		title: "",
 		image: "",
 		questions: [
 			{
 				title: "",
 				image: "",
-				allocatedTime: 30,
-				weight: 10,
-				answers: [
-					{ title: "", isCorrect: true },
-					{ title: "", isCorrect: false },
+				questionType: "text",
+				questionOrder: 0,
+				selectOptions: [
+					{ title: "" },
+					{ title: "" },
 				],
 			},
 		],
-	};
-
-	const [formData, setFormData] = useState(initialTestState);
-
+	});
+	const [deletedQuestionsIds, setDeletedQuestionsIds] = useState([]);
 	const fileInputRef = useRef(null);
 	const questionFileInputRefs = useRef({});
 
 	const navigate = useNavigate();
-	const token = localStorage.getItem("token");
+	const { id } = useParams();
+	const token = localStorage.getItem("token"); // Asegúrate de obtener el token como sea necesario para tu aplicación.
+
+	useEffect(() => {
+		async function fetchAssessmentDetails() {
+			try {
+				const response = await fetch(
+					`http://localhost:8000/assessment/${id}/view/token=${token}`
+				);
+				if (!response.ok) {
+					// Si el estado de la respuesta no es OK, arrojar un error con el código de estado
+					throw new Error(
+						`Error ${response.status}: ${response.statusText}`
+					);
+				}
+				const data = await response.json();
+				setFormData(data);
+				console.log(data);
+			} catch (error) {
+				console.error("Fetch error:", error);
+				// Redireccionar a la página de error sin pasar el código de estado como parámetro
+				navigate("/error");
+			}
+		}
+
+		fetchAssessmentDetails();
+	}, [id, token, navigate]);
 
 	const updateFormField = (field, value) => {
 		setFormData({ ...formData, [field]: value });
@@ -38,15 +62,19 @@ function CreateTest() {
 		setFormData({ ...formData, questions: updatedQuestions });
 	};
 
-	const updateAnswer = (questionIndex, answerIndex, field, value) => {
+	useEffect(() => {
+		console.log(formData);
+	}, [formData]);
+
+	const updateSelectOption = (questionIndex, selectOptionIndex, field, value) => {
 		const updatedQuestions = formData.questions.map((question, qIndex) =>
 			qIndex === questionIndex
 				? {
 						...question,
-						answers: question.answers.map((answer, aIndex) =>
-							aIndex === answerIndex
-								? { ...answer, [field]: value }
-								: answer
+						selectOptions: question.selectOptions.map((selectOption, aIndex) =>
+							aIndex === selectOptionIndex
+								? { ...selectOption, [field]: value }
+								: selectOption
 						),
 				  }
 				: question
@@ -62,11 +90,11 @@ function CreateTest() {
 				{
 					title: "",
 					image: "",
-					allocatedTime: 30,
-					weight: 10,
-					answers: [
-						{ title: "", isCorrect: true },
-						{ title: "", isCorrect: false },
+					questionType: "text",
+					questionOrder: formData.questions.length,
+					selectOptions: [
+						{ title: "" },
+						{ title: "" },
 					],
 				},
 			],
@@ -74,19 +102,22 @@ function CreateTest() {
 	};
 
 	const removeQuestion = (questionIndex) => {
-		const updatedQuestions = formData.questions.filter(
-			(_, index) => index !== questionIndex
-		);
+		const removedQuestionId = formData.questions[questionIndex].id;
+		setDeletedQuestionsIds([...deletedQuestionsIds, removedQuestionId]);
+
+		const updatedQuestions = formData.questions
+			.filter((_, index) => index !== questionIndex)
+			.map((question, index) => ({ ...question, questionOrder: index }));
 		setFormData({ ...formData, questions: updatedQuestions });
 	};
 
-	const addAnswer = (questionIndex) => {
+	const addSelectOption = (questionIndex) => {
 		const updatedQuestions = formData.questions.map((question, qIndex) =>
 			qIndex === questionIndex
 				? {
 						...question,
-						answers: [
-							...question.answers,
+						selectOptions: [
+							...question.selectOptions,
 							{ title: "", isCorrect: false },
 						],
 				  }
@@ -95,13 +126,13 @@ function CreateTest() {
 		setFormData({ ...formData, questions: updatedQuestions });
 	};
 
-	const removeAnswer = (questionIndex, answerIndex) => {
+	const removeSelectOption = (questionIndex, selectOptionIndex) => {
 		const updatedQuestions = formData.questions.map((question, qIndex) =>
 			qIndex === questionIndex
 				? {
 						...question,
-						answers: question.answers.filter(
-							(_, aIndex) => aIndex !== answerIndex
+						selectOptions: question.selectOptions.filter(
+							(_, aIndex) => aIndex !== selectOptionIndex
 						),
 				  }
 				: question
@@ -109,14 +140,14 @@ function CreateTest() {
 		setFormData({ ...formData, questions: updatedQuestions });
 	};
 
-	const setCorrectAnswer = (questionIndex, answerIndex) => {
+	const setCorrectSelectOption = (questionIndex, selectOptionIndex) => {
 		const updatedQuestions = formData.questions.map((question, qIndex) =>
 			qIndex === questionIndex
 				? {
 						...question,
-						answers: question.answers.map((answer, aIndex) => ({
-							...answer,
-							isCorrect: aIndex === answerIndex,
+						selectOptions: question.selectOptions.map((selectOption, aIndex) => ({
+							...selectOption,
+							isCorrect: aIndex === selectOptionIndex,
 						})),
 				  }
 				: question
@@ -126,7 +157,7 @@ function CreateTest() {
 
 	const isValidForm = () => {
 		if (!formData.title.trim()) {
-			//console.log("El título del test está vacío.");
+			//console.log("El título del assessment está vacío.");
 			return false;
 		}
 
@@ -135,83 +166,40 @@ function CreateTest() {
 				//console.log("El título de la pregunta está vacío.");
 				return false;
 			}
-
-			if (question.allocatedTime <= 10 || question.weight <= 0) {
-				/*console.log(
-					"El tiempo asignado o el peso de la pregunta no es válido."
-				);*/
-				return false;
-			}
-
-			if (question.answers.length < 2) {
-				//console.log("No hay suficientes respuestas para la pregunta.");
-				return false;
-			}
-
-			let correctAnswerFound = false;
-			for (const answer of question.answers) {
-				if (!answer.title.trim()) {
-					/*console.log(
-						"Una respuesta marcada como correcta está vacía."
-					);*/
-					return false;
-				}
-
-				if (answer.isCorrect) {
-					correctAnswerFound = true;
-				}
-			}
-
-			if (!correctAnswerFound) {
-				/*console.log(
-					"No se encontró ninguna respuesta correcta para la pregunta."
-				);*/
-				return false;
-			}
 		}
 
 		return true;
 	};
 
-	function handleImageChange(event) {
-		const file = event.target.files[0];
-		if (file) {
-			updateFormField("image", file.name);
-
-			const reader = new FileReader();
-			reader.onload = function (uploadEvent) {
-				// Lógica de carga de imagen (si es necesario)
-			};
-			reader.readAsDataURL(file);
-		}
-	}
-
-	function handleQuestionImageChange(event, qIndex) {
-		const file = event.target.files[0];
-		if (file) {
-			updateQuestion(qIndex, "image", file.name);
-
-			const reader = new FileReader();
-			reader.onload = function (uploadEvent) {};
-			reader.readAsDataURL(file);
-		}
-	}
-
 	const handleSave = async () => {
 		if (!isValidForm()) {
-			alert("Por favor, rellena todos los campos correctamente.");
+			alert("Por favor, rellena todos los campos.");
 			return;
 		}
 
 		try {
+			const formDataWithQuestions = {
+				title: formData.title,
+				image: formData.image,
+				questions: formData.questions.map((question) => ({
+					id: question.id ?? null,
+					title: question.title,
+					image: question.image,
+					questionType: question.questionType,
+					questionOrder: question.questionOrder,
+					selectOptions: question.questionType === "select" ? question.selectOptions : [],
+				})),
+				deletedQuestionsIds,
+			};
+			console.log(formDataWithQuestions);
 			const response = await fetch(
-				`http://localhost:8000/test/create/token=${token}`,
+				`http://localhost:8000/assessment/${id}/edit/token=${token}`,
 				{
 					method: "PUT",
 					headers: {
 						"Content-Type": "application/json",
 					},
-					body: JSON.stringify(formData),
+					body: JSON.stringify(formDataWithQuestions),
 				}
 			);
 
@@ -221,28 +209,15 @@ function CreateTest() {
 					`Error ${response.status}: ${response.statusText}`
 				);
 			}
-			console.log(formData);
-			alert("Test creado con éxito");
-			navigate("/menu/test");
+
+			alert("Assessment guardado con éxito");
+			navigate(`/menu/assessment`);
 		} catch (error) {
 			console.error("Fetch error:", error);
 			// Redireccionar a la página de error sin pasar el código de estado como parámetro
 			navigate("/error");
 		}
 	};
-
-	const handleCancel = () => {
-		navigate("/menu/test");
-	};
-
-	const canAddQuestion = () => formData.questions.length < 10;
-	const canAddAnswer = (qIndex) =>
-		formData.questions[qIndex].answers.length < 4;
-	const canRemoveAnswer = (qIndex) =>
-		formData.questions[qIndex].answers.length > 2;
-	const hasCorrectAnswer = (qIndex) =>
-		formData.questions[qIndex].answers.some((answer) => answer.isCorrect);
-	const canRemoveQuestion = () => formData.questions.length > 1;
 
 	function handleImageChange(event) {
 		const file = event.target.files[0];
@@ -270,6 +245,10 @@ function CreateTest() {
 		}
 	}
 
+	const handleCancel = () => {
+		navigate(`/menu/assessment/${id}`);
+	};
+
 	const clearImage = () => {
 		updateFormField("image", "");
 	};
@@ -277,6 +256,15 @@ function CreateTest() {
 	const clearQuestionImage = (qIndex) => {
 		updateQuestion(qIndex, "image", "");
 	};
+
+	// const canAddQuestion = () => formData.questions.length < 10;
+	// const canAddSelectOption = (qIndex) =>
+	// 	formData.questions[qIndex].selectOptions.length < 4;
+	const canAddQuestion = () => true;
+	const canAddSelectOption = () => true;
+	const canRemoveSelectOption = (qIndex) =>
+		formData.questions[qIndex].selectOptions.length > 2;
+	const canRemoveQuestion = () => formData.questions.length > 1;
 
 	return (
 		<div className="container-fluid">
@@ -292,10 +280,10 @@ function CreateTest() {
 				<div className="navbar-nav">
 					<a
 						href="#"
-						onClick={() => navigate("/menu/test")}
+						onClick={() => navigate("/menu/assessment")}
 						className="nav-link"
 					>
-						Test
+						Assessment
 					</a>
 					<a
 						href="#"
@@ -333,10 +321,10 @@ function CreateTest() {
 				</aside>
 				<main className="col-md-10">
 					<div className="card p-3">
-						{/* ... (inputs para el título del test y para la imagen del test) */}
+						{/* ... (inputs para el título del assessment y para la imagen del assessment) */}
 						<div className="mb-3">
 							<label className="form-label">
-								Título del Test
+								Título del Assessment
 							</label>
 							<input
 								type="text"
@@ -457,105 +445,72 @@ function CreateTest() {
 										</button>
 									</div>
 								</div>
-								{/* Div contenedor para Tiempo Asignado y Puntos */}
-								<div className="row mb-3">
-									{/* Columna para Tiempo Asignado */}
-									<div className="col">
-										<label className="form-label">
-											Tiempo Asignado (segundos)
-										</label>
-										<input
-											type="number"
-											className="form-control"
-											value={question.allocatedTime}
-											onChange={(e) =>
-												updateQuestion(
-													qIndex,
-													"allocatedTime",
-													parseInt(e.target.value, 10)
-												)
-											}
-											min="10" // Puedes definir un mínimo
-										/>
-									</div>
-
-									{/* Columna para Puntos */}
-									<div className="col">
-										<label className="form-label">
-											Puntos
-										</label>
-										<input
-											type="number"
-											className="form-control"
-											value={question.weight}
-											onChange={(e) =>
-												updateQuestion(
-													qIndex,
-													"weight",
-													parseInt(e.target.value, 10)
-												)
-											}
-											min="1" // Puedes definir un mínimo
-										/>
-									</div>
-								</div>
-								<br />
 								<div className="mb-3">
-									<h6>Respuestas</h6>
-								</div>
-								{question.answers.map((answer, aIndex) => (
-									<div
-										key={aIndex}
-										className="d-flex align-items-center mb-2"
+									<label className="form-label">
+										Tipo de Pregunta
+									</label>
+									<select
+										className="form-select"
+										value={question.questionType}
+										onChange={(e) =>
+											updateQuestion(
+												qIndex,
+												"questionType",
+												e.target.value
+											)
+										}
 									>
-										<input
-											type="text"
-											className="form-control me-2"
-											value={answer.title}
-											onChange={(e) =>
-												updateAnswer(
-													qIndex,
-													aIndex,
-													"title",
-													e.target.value
-												)
-											}
-											placeholder="Texto de la Respuesta"
-										/>
-										<input
-											type="checkbox"
-											className="form-check-input me-2"
-											checked={answer.isCorrect}
-											onChange={() =>
-												setCorrectAnswer(qIndex, aIndex)
-											}
-										/>
-										<label className="form-check-label me-2">
-											Correcta
-										</label>
-										<button
-											onClick={() =>
-												removeAnswer(qIndex, aIndex)
-											}
-											className="btn btn-danger ms-2"
-											disabled={
-												!canRemoveAnswer(qIndex) ||
-												!hasCorrectAnswer(qIndex)
-											}
-										>
-											Eliminar
-										</button>
+										<option value="text">Texto</option>
+										<option value="number">Numérica</option>
+										<option value="select">Selección</option>
+									</select>
+								</div>
+								{question.questionType === "select" && (
+									<div className="mb-3">
+										<h6>Opciones</h6>
+										{question.selectOptions.map((selectOption, aIndex) => (
+											<div
+												key={aIndex}
+												className="d-flex align-items-center mb-2"
+											>
+												<input
+													type="text"
+													className="form-control me-2"
+													value={selectOption.title}
+													onChange={(e) =>
+														updateSelectOption(
+															qIndex,
+															aIndex,
+															"title",
+															e.target.value
+														)
+													}
+													placeholder="Texto de la Opción"
+												/>
+												<button
+													onClick={() =>
+														removeSelectOption(qIndex, aIndex)
+													}
+													className="btn btn-danger ms-2"
+													disabled={
+														!canRemoveSelectOption(qIndex)
+													}
+												>
+													Eliminar
+												</button>
+											</div>
+										))}
+										<div className="d-flex justify-content-end">
+											<button
+												onClick={() => addSelectOption(qIndex)}
+												className="btn btn-primary mb-2"
+												disabled={!canAddSelectOption(qIndex)}
+											>
+												Añadir
+											</button>
+										</div>
 									</div>
-								))}
-								<div className="d-flex justify-content-end">
-									<button
-										onClick={() => addAnswer(qIndex)}
-										className="btn btn-primary mb-2"
-										disabled={!canAddAnswer(qIndex)}
-									>
-										Añadir
-									</button>
-								</div>
+								)}
 								{canRemoveQuestion() && (
 									<div className="d-grid gap-2">
 										<button
@@ -589,4 +544,4 @@ function CreateTest() {
 	);
 }
 
-export default CreateTest;
+export default EditAssessment;

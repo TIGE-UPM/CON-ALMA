@@ -313,16 +313,8 @@ function DetalleAssessment() {
 															(selectOption) => (
 																<li
 																	key={selectOption.id}
-																	className={
-																		selectOption.isCorrect
-																			? "text-success"
-																			: ""
-																	}
 																>
-																	{selectOption.title}{" "}
-																	{selectOption.isCorrect
-																		? "(Correcta)"
-																		: ""}
+																	{selectOption.title}
 																</li>
 															)
 														)}

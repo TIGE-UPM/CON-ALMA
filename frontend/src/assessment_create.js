@@ -10,6 +10,7 @@ function CreateAssessment() {
 				title: "",
 				image: "",
 				questionType: "text",
+				questionOrder: 0,
 				selectOptions: [
 					{ title: "" },
 					{ title: "" },
@@ -62,6 +63,7 @@ function CreateAssessment() {
 					title: "",
 					image: "",
 					questionType: "text",
+					questionOrder: formData.questions.length,
 					selectOptions: [
 						{ title: "" },
 						{ title: "" },
@@ -72,9 +74,9 @@ function CreateAssessment() {
 	};
 
 	const removeQuestion = (questionIndex) => {
-		const updatedQuestions = formData.questions.filter(
-			(_, index) => index !== questionIndex
-		);
+		const updatedQuestions = formData.questions
+			.filter((_, index) => index !== questionIndex)
+			.map((question, index) => ({ ...question, questionOrder: index }));
 		setFormData({ ...formData, questions: updatedQuestions });
 	};
 
@@ -169,6 +171,16 @@ function CreateAssessment() {
 		}
 
 		try {
+			const body = {
+				title: formData.title,
+				image: formData.image,
+				questions: formData.questions.map((question) => ({
+					title: question.title,
+					image: question.image,
+					questionType: question.questionType,
+					selectOptions: question.questionType === "select" ? question.selectOptions : [],
+				})),
+			};
 			const response = await fetch(
 				`http://localhost:8000/assessment/create/token=${token}`,
 				{
