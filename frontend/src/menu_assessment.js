@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-function MenuTest() {
-	const [tests, setTests] = useState([]);
+function MenuAssessment() {
+	const [assessments, setAssessments] = useState([]);
 	const [searchTerm, setSearchTerm] = useState("");
 	const [archiveFilter, setArchiveFilter] = useState("todos");
-	const [playedFilter, setPlayedFilter] = useState("todos");
+	// const [playedFilter, setPlayedFilter] = useState("todos");
 	const navigate = useNavigate();
 	const token = localStorage.getItem("token");
 	const fileInputRef = useRef(null);
@@ -14,17 +14,17 @@ function MenuTest() {
 		fileInputRef.current.click();
 	};
 	useEffect(() => {
-		fetchTests();
+		fetchAssessments();
 	}, [token]);
 
-	const fetchTests = async () => {
+	const fetchAssessments = async () => {
 		try {
 			const response = await fetch(
-				`http://localhost:8000/test/all/token=${token}`
+				`http://localhost:8000/assessment/all/token=${token}`
 			);
 			if (!response.ok) {
 				if (response.status === 404) {
-					setTests([]);
+					setAssessments([]);
 				} else {
 					throw new Error(
 						`Error ${response.status}: ${response.statusText}`
@@ -32,7 +32,7 @@ function MenuTest() {
 				}
 			} else {
 				const data = await response.json();
-				setTests(data);
+				setAssessments(data);
 			}
 		} catch (error) {
 			console.error("Fetch error:", error);
@@ -40,14 +40,14 @@ function MenuTest() {
 		}
 	};
 
-	const handleInfo = (testId) => {
-		navigate(`/menu/test/${testId}`);
+	const handleInfo = (assessmentId) => {
+		navigate(`/menu/assessment/${assessmentId}`);
 	};
 
-	const handleArchiveToggle = async (testId, archivedStatus) => {
+	const handleArchiveToggle = async (assessmentId, archivedStatus) => {
 		try {
 			const response = await fetch(
-				`http://localhost:8000/test/${testId}/archive/token=${token}`,
+				`http://localhost:8000/assessment/${assessmentId}/archive/token=${token}`,
 				{ method: "POST" }
 			);
 			if (!response.ok) {
@@ -56,7 +56,7 @@ function MenuTest() {
 					`Error ${response.status}: ${response.statusText}`
 				);
 			}
-			fetchTests();
+			fetchAssessments();
 		} catch (error) {
 			console.error("Fetch error:", error);
 			// Redireccionar a la página de error sin pasar el código de estado como parámetro
@@ -64,11 +64,11 @@ function MenuTest() {
 		}
 	};
 
-	const handleDelete = async (testId) => {
-		if (window.confirm("¿Estás seguro de eliminar el test?")) {
+	const handleDelete = async (assessmentId) => {
+		if (window.confirm("¿Estás seguro de eliminar la evaluación?")) {
 			try {
 				const response = await fetch(
-					`http://localhost:8000/test/${testId}/delete/token=${token}`,
+					`http://localhost:8000/assessment/${assessmentId}/delete/token=${token}`,
 					{ method: "DELETE" }
 				);
 				if (!response.ok) {
@@ -77,7 +77,7 @@ function MenuTest() {
 						`Error ${response.status}: ${response.statusText}`
 					);
 				}
-				fetchTests();
+				fetchAssessments();
 			} catch (error) {
 				console.error("Fetch error:", error);
 				// Redireccionar a la página de error sin pasar el código de estado como parámetro
@@ -86,11 +86,11 @@ function MenuTest() {
 		}
 	};
 
-	const handleNewTest = () => {
-		navigate("/menu/test/new");
+	const handleNewAssessment = () => {
+		navigate("/menu/assessment/new");
 	};
 
-	const handleImportTest = async () => {
+	const handleImportAssessment = async () => {
 		const file = fileInputRef.current.files[0];
 		if (!file) {
 			alert("Por favor, selecciona un archivo .lgqz.");
@@ -108,7 +108,7 @@ function MenuTest() {
 				const jsonData = JSON.parse(event.target.result);
 				// Suponiendo que tienes 'token' disponible
 				const response = await fetch(
-					`http://localhost:8000/test/create/token=${token}`,
+					`http://localhost:8000/assessment/create/token=${token}`,
 					{
 						method: "PUT",
 						headers: {
@@ -124,7 +124,7 @@ function MenuTest() {
 					);
 				}
 
-				alert("Test importado con éxito");
+				alert("Evaluación importada con éxito");
 				window.location.reload(true);
 			} catch (error) {
 				console.error("Fetch error:", error);
@@ -147,42 +147,39 @@ function MenuTest() {
 	const handleResetFilters = () => {
 		setSearchTerm("");
 		setArchiveFilter("todos");
-		setPlayedFilter("todos");
+		// setPlayedFilter("todos");
 	};
 
-	const filteredTests = tests.filter((test) => {
+	const filteredAssessments = assessments.filter((assessment) => {
 		const archiveCondition =
 			archiveFilter === "todos" ||
-			(archiveFilter === "archivados" && test.archived) ||
-			(archiveFilter === "noArchivados" && !test.archived);
-		const playedCondition =
-			playedFilter === "todos" ||
-			(playedFilter === "jugados" && test.played > 0) ||
-			(playedFilter === "noJugados" && test.played === 0);
+			(archiveFilter === "archivados" && assessment.archived) ||
+			(archiveFilter === "noArchivados" && !assessment.archived);
 
 		return (
-			test.title.toLowerCase().includes(searchTerm) &&
-			archiveCondition &&
-			playedCondition
+			assessment.title.toLowerCase().includes(searchTerm) &&
+			archiveCondition
+			// &&
+			// playedCondition
 		);
 	});
 
 	const defaultImage = "";
 
-	/*<button className="btn btn-danger" onClick={() => handleDelete(test.id)}>
+	/*<button className="btn btn-danger" onClick={() => handleDelete(assessment.id)}>
 		Eliminar
 	</button>;
-	
+
 	<button
 		className="btn btn-warning me-2" // Agregado me-2 para dar margen extra
 		onClick={() =>
 			handleArchiveToggle(
-				test.id,
-				!test.archived
+				assessment.id,
+				!assessment.archived
 			)
 		}
 	>
-		{test.archived
+		{assessment.archived
 			? "Desarchivar"
 			: "Archivar"}
 	</button>*/
@@ -201,10 +198,10 @@ function MenuTest() {
 				<div className="navbar-nav">
 					<a
 						href="#"
-						onClick={() => navigate("/menu/test")}
+						onClick={() => navigate("/menu/assessment")}
 						className="nav-link"
 					>
-						Test
+						Assessment
 					</a>
 					<a
 						href="#"
@@ -228,27 +225,27 @@ function MenuTest() {
 				<aside className="col-md-3">
 					<button
 						className="btn btn-success mb-3 w-100"
-						onClick={handleNewTest}
+						onClick={handleNewAssessment}
 					>
-						Nuevo Test
+						Nuevo Assessment
 					</button>
 					<button
 						className="btn btn-primary mb-3 w-100"
 						onClick={triggerFileInput}
 					>
-						Importar Test
+						Importar Assessment
 					</button>
 					<input
 						type="file"
 						ref={fileInputRef}
 						accept=".lgqz"
 						style={{ display: "none" }}
-						onChange={handleImportTest}
+						onChange={handleImportAssessment}
 					/>
 					<input
 						type="text"
 						className="form-control mb-3 w-100"
-						placeholder="Buscar Test"
+						placeholder="Buscar Assessment"
 						value={searchTerm}
 						onChange={handleSearchChange}
 					/>
@@ -299,7 +296,7 @@ function MenuTest() {
 						</div>
 					</div>
 
-					<div className="bg-light p-2 rounded-3 mb-3">
+					{/* <div className="bg-light p-2 rounded-3 mb-3">
 						<div className="nav nav-pills nav-fill">
 							<button
 								className={`nav-link ${
@@ -341,7 +338,7 @@ function MenuTest() {
 								No Jugados
 							</button>
 						</div>
-					</div>
+					</div> */}
 
 					<button
 						className="btn btn-secondary mb-3 w-100"
@@ -352,12 +349,12 @@ function MenuTest() {
 				</aside>
 
 				<section className="col-md-9">
-					{tests.length === 0 ? <h2>No hay resultados</h2> : ""}
-					{filteredTests ? (
+					{assessments.length === 0 ? <h2>No hay resultados</h2> : ""}
+					{filteredAssessments ? (
 						<div className="row">
-							{filteredTests.map((test) => (
+							{filteredAssessments.map((assessment) => (
 								<div
-									key={test.id}
+									key={assessment.id}
 									className="col-md-4 mb-4 d-flex align-items-stretch"
 								>
 									<div
@@ -366,7 +363,7 @@ function MenuTest() {
 									>
 										<img
 											src={
-												test.image ||
+												assessment.image ||
 												`${process.env.PUBLIC_URL}/default-banner.png`
 											}
 											className="card-img-top img-fluid"
@@ -374,7 +371,7 @@ function MenuTest() {
 												maxHeight: "150px",
 												objectFit: "cover",
 											}}
-											alt={`Test ${test.title}`}
+											alt={`Assessment ${assessment.title}`}
 											onError={(e) => {
 												e.target.onerror = null;
 												e.target.src = `${process.env.PUBLIC_URL}/default-banner.png`;
@@ -382,22 +379,22 @@ function MenuTest() {
 										/>
 										<div className="card-body d-flex flex-column">
 											<h5 className="card-title">
-												{test.title}
+												{assessment.title}
 											</h5>
-											<p className="card-text">
-												Jugado: {test.played} veces
-											</p>
+											{/* <p className="card-text">
+												Jugado: {assessment.played} veces
+											</p> */}
 											<p className="card-text">
 												Creado:{" "}
 												{new Date(
-													test.createdAt
+													assessment.createdAt
 												).toLocaleDateString()}
 											</p>
 											<div className="mt-auto d-flex justify-content-between">
 												<button
 													className="btn btn-info"
 													onClick={() =>
-														handleInfo(test.id)
+														handleInfo(assessment.id)
 													}
 												>
 													Info
@@ -418,4 +415,4 @@ function MenuTest() {
 	);
 }
 
-export default MenuTest;
+export default MenuAssessment;
