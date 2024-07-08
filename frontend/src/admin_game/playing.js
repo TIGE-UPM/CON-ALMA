@@ -71,6 +71,11 @@ function PlayingScreen({ data, ws, connectedUsers }) {
 		if (data.event === "REFRESH") {
 			fetchAssessmentInstance();
 		}
+		if (data.event === "VOTE") {
+			const user = currentGradingUsers.find((user) => user.id === data.user_id);
+			user.voted = true;
+			setCurrentGradingUsers([...currentGradingUsers]);
+		}
 		setGameState(data);
 
 		console.log(data);

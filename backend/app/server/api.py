@@ -157,8 +157,6 @@ class JSON_Assessment_Output(BaseModel):
 	image: Optional[str]
 	archived: bool
 	questions: Optional[List[JSON_Question_Output]]
-	createdAt: datetime
-	updatedAt: datetime
 
 class JSON_AssessmentInstance_Output(BaseModel):
 	id: int
@@ -224,13 +222,20 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # FUNCIONES
-async def is_admin(token: str):
+async def check_is_admin(token: str):
 	if not token:
 		raise HTTPException(status_code=401, detail="Fallo de sesión")
 	token_payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
 	if not token_payload.get('is_admin'):
 		raise HTTPException(status_code=401, detail="No eres administrador")
+	return True
 
+async def is_admin(token: str):
+	if not token:
+		raise HTTPException(status_code=401, detail="Fallo de sesión")
+	token_payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+	if not token_payload.get('is_admin'):
+		return False
 	return True
 
 async def get_token_user_id(token: str):
@@ -297,7 +302,7 @@ async def login(input_data: JSON_Login):
 # RUTAS DE ASSESSMENTS
 @app.get("/assessment/all/token={token}", response_model=List[JSON_Assessment_Full_Output])
 async def get_all_assessments(token: str):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		all_assessments = session.query(Assessment).filter(Assessment.actual_assessment_id.is_(None)).all()
 
@@ -330,7 +335,7 @@ async def get_all_assessments(token: str):
 
 @app.get("/assessment/{ID}/view/token={token}", response_model=JSON_Assessment_Full_Output)
 async def get_assessment_by_ID(token: str, ID: int):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessment = session.query(Assessment).filter(Assessment.id == ID).first()
 		if assessment is None:
@@ -369,7 +374,7 @@ async def get_assessment_by_ID(token: str, ID: int):
 
 @app.delete("/assessment/{ID}/delete/token={token}")
 async def delete_assessment_by_ID(token: str, ID: int):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessments_to_delete = session.query(Assessment).filter(or_(Assessment.id == ID, Assessment.actual_assessment_id == ID)).all()
 
@@ -392,7 +397,7 @@ async def delete_assessment_by_ID(token: str, ID: int):
 
 @app.post("/assessment/{ID}/archive/token={token}")
 async def toggle_archive_assessment(token: str, ID: int):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessment = session.query(Assessment).filter(Assessment.id == ID).first()
 		if assessment is None:
@@ -413,7 +418,7 @@ async def toggle_archive_assessment(token: str, ID: int):
 
 @app.post("/assessment/create/token={token}")
 async def create_assessment(token: str, input_data: JSON_Assessment_Input):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		existing_assessment = session.query(Assessment).filter(Assessment.title == input_data.title).first()
 
@@ -458,7 +463,7 @@ async def create_assessment(token: str, input_data: JSON_Assessment_Input):
 
 @app.put("/assessment/{ID}/edit/token={token}")
 async def edit_assessment(token: str, ID: int, input_data: JSON_Assessment_Edit_Input):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessment = session.query(Assessment).filter(Assessment.id == ID).first()
 		if assessment is None:
@@ -538,7 +543,7 @@ async def edit_assessment(token: str, ID: int, input_data: JSON_Assessment_Edit_
 # RUTAS DE ASSESSMENT INSTANCES
 @app.get("/assessment/{id}/assessment-instance/all/token={token}", response_model=JSON_Assessment_AssessmentInstances_Output)
 async def get_all_assessment_instances(token: str, id: int):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessment = session.query(Assessment).filter(Assessment.id == id).first()
 		print(assessment)
@@ -587,7 +592,7 @@ async def get_all_assessment_instances(token: str, id: int):
 
 @app.post("/assessment/{id}/assessment-instance/create/token={token}")
 async def create_assessment_instance(token: str, id: int, input_data: JSON_AssessmentInstance_Input):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessment = session.query(Assessment).filter(Assessment.id == id).first()
 		if not assessment:
@@ -648,6 +653,7 @@ async def get_active_assessment_instance(token: str):
 				key=lambda user: user.order
 			)
 		else:
+			# pdb.set_trace()
 			user_id = await get_token_user_id(token)
 			user = session.query(User).filter(User.id == user_id).first()
 			if not user:
@@ -656,7 +662,7 @@ async def get_active_assessment_instance(token: str):
 			if user.assessment_instance_id != assessmentInstance.id:
 				raise HTTPException(status_code=404, detail="Usuario no encontrado en esta evaluación")
 
-			answers = session.query(Answer).filter(Answer.assessment_instance_id == assessmentInstance.id, Answer.grading_user_id == user.id).all()
+			answers = session.query(Answer).filter(Answer.assessment_instance_id == assessmentInstance.id, Answer.grading_user_id == user.id, Answer.graded_user_id == actual_user.id).all()
 			if len(answers) > 0:
 				answers_data = [
 					JSON_Answer_Output(
@@ -669,31 +675,29 @@ async def get_active_assessment_instance(token: str):
 						date=answer.date
 					) for answer in answers
 				]
-			elif user.voteEveryone or user.group == actual_user.group:
-				assessment = session.query(Assessment).filter(Assessment.id == assessmentInstance.assessment_id).first()
-				assessment_data = JSON_Assessment_Output(
-					id=assessment.id,
-					title=assessment.title,
-					image=assessment.image,
-					archived=assessment.archived,
-					questions= sorted(
-						[
-							JSON_Question_Output(
-								id=question.id,
-								assessment_id=question.assessment_id,
-								title=question.title,
-								image=question.image,
-								questionType=question.questionType,
-								questionOrder=question.questionOrder,
-								selectOptions= [JSON_SelectOptions.from_dict(option) for option in question.selectOptions]
-							) for question in assessment.questions
-						],
-						key=lambda question: question.questionOrder
-					)
+			assessment = session.query(Assessment).filter(Assessment.id == assessmentInstance.assessment_id).first()
+			assessment_data = JSON_Assessment_Output(
+				id=assessment.id,
+				title=assessment.title,
+				image=assessment.image,
+				archived=assessment.archived,
+				questions= sorted(
+					[
+						JSON_Question_Output(
+							id=question.id,
+							assessment_id=question.assessment_id,
+							title=question.title,
+							image=question.image,
+							questionType=question.questionType,
+							questionOrder=question.questionOrder,
+							selectOptions= [JSON_SelectOptions.from_dict(option) for option in question.selectOptions]
+						) for question in assessment.questions
+					],
+					key=lambda question: question.questionOrder
 				)
-			else:
-				actual_user_id = None
-				actual_user_name = None
+			)
+			if not user.voteEveryone and user.group != actual_user.group:
+				actual_user_data = None
 
 		response = JSON_AssessmentInstance_Output(
 			id=assessmentInstance.id,
@@ -716,7 +720,7 @@ async def get_active_assessment_instance(token: str):
 
 @app.get("/assessment-instance/{ID}/token={token}", response_model=JSON_AssessmentInstance_Output)
 async def get_assessment_instance_by_ID(token: str, ID: int):
-	token_is_admin = await (is_admin(token))
+	token_is_admin = await (check_is_admin(token))
 	if token_is_admin:
 		try:
 			assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == ID).first()
@@ -821,7 +825,7 @@ def generate_unique_pin(session, assessment_instance_id: int) -> str:
 
 @app.post("/assessment-instance/{ID}/users/upload/token={token}")
 async def add_users_from_csv(token: str, ID: int, file: UploadFile = File(...)):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == ID).first()
 		if not assessmentInstance:
@@ -858,7 +862,7 @@ async def add_users_from_csv(token: str, ID: int, file: UploadFile = File(...)):
 
 @app.delete("/assessment-instance/{ID}/delete/token={token}")
 async def delete_assessment_instance_by_ID(token: str, ID: int):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == ID).first()
 		if not assessmentInstance:
@@ -879,7 +883,7 @@ async def delete_assessment_instance_by_ID(token: str, ID: int):
 @app.websocket("/assessment-instance/{id}/start/token={token}")
 async def start_assessment_instance(websocket: WebSocket,id: int, token: str):
 	await manager.connect(websocket, is_admin=True)
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == id).first()
 		if not assessmentInstance:
@@ -938,7 +942,7 @@ async def start_assessment_instance(websocket: WebSocket,id: int, token: str):
 
 @app.post("/next/token={token}")
 async def next_user_assessment_instance(token: str):
-	await is_admin(token)
+	await check_is_admin(token)
 	try:
 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
 		if not assessmentInstance:
@@ -1018,6 +1022,9 @@ async def play(websocket: WebSocket, token: str):
 		await manager.broadcast_admin(user_json)
 		while True:
 			message = await manager.receive_text(websocket)
+			if message == "CLOSE":
+				await manager.disconnect(websocket)
+				break
 			# if message == "NEXT":
 	except HTTPException as e:
 		raise e
@@ -1037,6 +1044,7 @@ async def add_user_answer(token: str, input_data: JSON_User_Answer_Inputs):
 		if not user:
 			raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
+		# pdb.set_trace()
 		for answer_data in input_data.answers:
 			new_answer = Answer(
 				assessment_instance_id=assessmentInstance.id,
@@ -1049,6 +1057,12 @@ async def add_user_answer(token: str, input_data: JSON_User_Answer_Inputs):
 			session.add(new_answer)
 
 		session.commit()
+		info = {
+			"mode": "PLAYING",
+			"event": "VOTE",
+			"user_id": user_id,
+		}
+		await manager.broadcast_admin(json.dumps(info))
 		return {"detail": "Respuestas guardadas correctamente"}
 	except HTTPException as e:
 		raise e
