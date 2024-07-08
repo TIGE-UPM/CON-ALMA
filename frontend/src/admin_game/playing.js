@@ -1,13 +1,79 @@
-import React from "react";
+import React, {useState, useCallback, useEffect} from "react";
+import { useNavigate } from "react-router-dom";
 
-function PlayingScreen({ data, ws }) {
-	const questionInfo = data.question[0]; // Asumiendo que 'data.question' es un array
-
+function PlayingScreen({ data, ws, connectedUsers }) {
 	// Colores para las tarjetas
 	const colors = ["#FF7043", "#FFCA28", "#29B6F6", "#66BB6A"];
+	const navigate = useNavigate();
+	const [assessmentInstance, setAssessmentInstance] = useState(null);
+	const [gameState, setGameState] = useState(data);
+	const token = localStorage.getItem("token");
+	const [currentGradingUsers, setCurrentGradingUsers] = useState([]);
 
-	const handleSkip = () => {
-		ws.send("SKIP");
+	console.log(data);
+	const handleNext = async () => {
+		try {
+			const response = await fetch(
+				`http://localhost:8000/next/token=${token}`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: null,
+				}
+			);
+
+			if (!response.ok) {
+				// Si el estado de la respuesta no es OK, arrojar un error con el código de estado
+				throw new Error(
+					`Error ${response.status}: ${response.statusText}`
+				);
+			}
+		} catch (error) {
+			console.error("Fetch error:", error);
+			navigate("/error");
+		}
+	};
+
+	const fetchAssessmentInstance = useCallback(async () => {
+		try {
+			const response = await fetch(
+				`http://localhost:8000/assessment-instance/active/token=${token}`
+			);
+			if (!response.ok) {
+				// Si el estado de la respuesta no es OK, arrojar un error con el código de estado
+				throw new Error(
+					`Error ${response.status}: ${response.statusText}`
+				);
+			}
+			const data = await response.json();
+			setAssessmentInstance(data);
+			const gradingUsers = data.users.filter((user) => user.voteEveryone || user.group === data.actual_user.group);
+			const filteredGradingUsers = gradingUsers.filter((user) => connectedUsers.some((connectedUser) => connectedUser.id === user.id));
+			filteredGradingUsers.forEach((user) => {
+				user.voted = false;
+			});
+			console.log(filteredGradingUsers);
+			setCurrentGradingUsers(filteredGradingUsers);
+		} catch (error) {
+			console.error("Fetch error:", error);
+			navigate("/error");
+		}
+	}, [gameState.event, token]);
+
+	useEffect(() => {
+		fetchAssessmentInstance();
+	}, [fetchAssessmentInstance]);
+
+	ws.onmessage = (event) => {
+		const data = JSON.parse(event.data);
+		if (data.event === "REFRESH") {
+			fetchAssessmentInstance();
+		}
+		setGameState(data);
+
+		console.log(data);
 	};
 
 	return (
@@ -18,17 +84,53 @@ function PlayingScreen({ data, ws }) {
 				padding: "0 20px", // Agregamos padding horizontal pero eliminamos el vertical
 			}}
 		>
-			{/* Reduciendo el margen encima del título de la pregunta */}
 			<div className="row mb-2">
+				<div className="col-12 text-center">
+					<h2 style={{ marginTop: "10px", marginBottom: "10px" }}>
+						Evaluación: {assessmentInstance?.title}
+					</h2>
+				</div>
+			</div>
+			{/* show current graded user */}
+			<div className="row mb-2">
+				<div className="col-12 text-center">
+					<h3 style={{ marginTop: "10px", marginBottom: "10px" }}>
+						Se está evaluando a {assessmentInstance?.actual_user.name}
+					</h3>
+				</div>
+			</div>
+			{!currentGradingUsers.length ? (
+				<div>
+						<h3>No hay usuarios evaluando</h3>
+				</div>
+			): (
+				<table className="table table-borderless">
+					<thead>
+						<tr>
+							<th>Nombre</th>
+							<th>Ha evaluado</th>
+						</tr>
+					</thead>
+					<tbody>
+						{currentGradingUsers.map((user) => (
+							<tr key={user.id}>
+								<td>{user.name}</td>
+								<td>{user.voted ? "Si ✅" : "No ❌"}</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			)}
+
+			{/* <div className="row mb-2">
 				<div className="col-12 text-center">
 					<h2 style={{ marginTop: "10px", marginBottom: "10px" }}>
 						{questionInfo.question_title}
 					</h2>
 				</div>
-			</div>
+			</div> */}
 
-			{/* Temporizador, imagen y contador de respuestas */}
-			<div className="row mb-4 align-items-center">
+			{/* <div className="row mb-4 align-items-center">
 				<div className="col-1 text-center">
 					<span style={{ fontSize: "2rem", color: "#333" }}>
 						{data.question_time}
@@ -47,10 +149,10 @@ function PlayingScreen({ data, ws }) {
 						{data.responses} / {data.players}
 					</span>
 				</div>
-			</div>
+			</div> */}
 
 			{/* Respuestas en dos niveles con el mismo alto */}
-			<div className="row justify-content-center">
+			{/* <div className="row justify-content-center">
 				{questionInfo.question_answers
 					.slice(0, 2)
 					.map((answer, index) => (
@@ -72,8 +174,8 @@ function PlayingScreen({ data, ws }) {
 							</div>
 						</div>
 					))}
-			</div>
-			<div className="row justify-content-center">
+			</div> */}
+			{/* <div className="row justify-content-center">
 				{questionInfo.question_answers.slice(2).map((answer, index) => (
 					<div key={answer.answers_id} className="col-6 mb-2">
 						<div
@@ -93,16 +195,15 @@ function PlayingScreen({ data, ws }) {
 						</div>
 					</div>
 				))}
-			</div>
+			</div> */}
 
-			{/* Botón para saltar a resultados */}
 			<div className="row">
 				<div className="col text-center">
 					<button
-						onClick={handleSkip}
+						onClick={handleNext}
 						className="btn btn-success btn-lg"
 					>
-						Saltar
+						Siguiente usuario
 					</button>
 				</div>
 			</div>

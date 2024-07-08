@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Response, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Response, HTTPException, WebSocket, WebSocketDisconnect, WebSocketException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Json
 import json
@@ -9,17 +9,23 @@ from typing import List, Optional, Literal
 import random
 import uuid
 import asyncio
+from dataclasses import dataclass
 from starlette.websockets import WebSocketState
 import json
 import asyncio
+import csv
+import jwt
+from io import StringIO
+from .config import Settings
 
+from .db_config import Assessment, Question, AssessmentInstance, User, Answer
 
-from .db_config import Assessment, Question, AssessmentInstance
+# TODO remove this when done
+import pdb
 
-ADMIN_USER = "admin"
-ADMIN_PASSWORD = "1234"
+settings = Settings()
 
-PLAYERS_TOKEN = {}
+USERS_TOKEN = {}
 ADMIN_TOKEN = None
 
 app = FastAPI()
@@ -41,6 +47,9 @@ class JSON_Login(BaseModel):
 	username: str
 	password: Optional[str]
 
+class JSON_User_Login(BaseModel):
+	pin: str
+
 # Modelos de los JSON de entrada
 # class JSON_Solution_Input(BaseModel):
 # 	question_id: int
@@ -52,9 +61,12 @@ class JSON_Login(BaseModel):
 # 	score: int
 # 	solutions: List[JSON_Solution_Input]
 
-# class JSON_Game_Input(BaseModel):
-# 	test_id: int
-# 	results: List[JSON_Result_Input]
+class JSON_User_Input(BaseModel):
+	name: str
+	email: str
+	order: int
+	group: int
+	voteEveryone: bool
 
 class JSON_SelectOptions(BaseModel):
 	title: str
@@ -75,14 +87,26 @@ class JSON_Question_Input(BaseModel):
 	questionOrder: int
 	selectOptions: Optional[List[JSON_SelectOptions]]
 
-class JSON_AssessmentInstance_Input(BaseModel):
-	title: str
-	assessment_id: int
-	# users: List[JSON_User_Input]
 class JSON_Assessment_Input(BaseModel):
 	title: str
 	image: Optional[str]
 	questions: List[JSON_Question_Input]
+
+class JSON_AssessmentInstance_Input(BaseModel):
+	title: str
+
+class JSON_AssessmentInstance_Users_Input(BaseModel):
+	users: List[JSON_User_Input]
+
+class JSON_User_Login(BaseModel):
+	pin: str
+
+class JSON_Answer_Input(BaseModel):
+	question_id: int
+	answerText: str
+
+class JSON_User_Answer_Inputs(BaseModel):
+	answers: List[JSON_Answer_Input]
 
 class JSON_Question_Edit_Input(BaseModel):
 	id: Optional[int]
@@ -99,39 +123,6 @@ class JSON_Assessment_Edit_Input(BaseModel):
 	deletedQuestionsIds: Optional[List[int]]
 
 # Modelos de los JSON de salida
-# class JSON_Solution_Output(BaseModel):
-# 	id: int
-# 	result_id: int
-# 	question_id: int
-# 	answer_id: int
-# 	time: int
-
-# class JSON_Result_Output(BaseModel):
-# 	id: int
-# 	player_id: int
-# 	player_name: str
-# 	game_id: int
-# 	score: int
-# 	solutions: Optional[List[JSON_Solution_Output]]
-
-# class JSON_Game_Output(BaseModel):
-# 	id: int
-# 	test_id: int
-# 	playedAt: datetime
-# 	players: int
-# 	results: Optional[List[JSON_Result_Output]]
-
-# class JSON_Player_Output(BaseModel):
-# 	id: int
-# 	name: str
-# 	createdAt: datetime
-# 	results: Optional[List[JSON_Result_Output]]
-
-# class JSON_Answer_Output(BaseModel):
-# 	id: int
-# 	question_id: int
-# 	title: str
-# 	isCorrect: bool
 
 class JSON_Question_Output(BaseModel):
 	id: int
@@ -142,12 +133,50 @@ class JSON_Question_Output(BaseModel):
 	questionOrder: int
 	selectOptions: Optional[List[JSON_SelectOptions]]
 
+class JSON_User_Output(BaseModel):
+	id: int
+	name: str
+	email: str
+	order: int
+	group: int
+	pin: str
+	voteEveryone: bool
+
+class JSON_Answer_Output(BaseModel):
+	id: int
+	assessment_instance_id: int
+	question_id: int
+	grading_user_id: int
+	graded_user_id: int
+	answerText: str
+	date: datetime
+
+class JSON_Assessment_Output(BaseModel):
+	id: int
+	title: str
+	image: Optional[str]
+	archived: bool
+	questions: Optional[List[JSON_Question_Output]]
+	createdAt: datetime
+	updatedAt: datetime
+
 class JSON_AssessmentInstance_Output(BaseModel):
 	id: int
 	title: str
 	assessment_id: int
-	# users: Optional[List[JSON_User_Output]]
-class JSON_Assessment_Output(BaseModel):
+	users: Optional[List[JSON_User_Output]]
+	actual_user: Optional[JSON_User_Output]
+	active: bool
+	finished: bool
+	answers: Optional[List[JSON_Answer_Output]]
+	assessment: Optional[JSON_Assessment_Output]
+
+class JSON_Assessment_AssessmentInstances_Output(BaseModel):
+	id: int
+	title: str
+	assessmentInstances: Optional[List[JSON_AssessmentInstance_Output]]
+
+class JSON_Assessment_Full_Output(BaseModel):
 	id: int
 	title: str
 	image: Optional[str]
@@ -156,16 +185,61 @@ class JSON_Assessment_Output(BaseModel):
 	updatedAt: datetime
 	questions: Optional[List[JSON_Question_Output]]
 	assessmentInstances: Optional[List[JSON_AssessmentInstance_Output]]
+	createdAt: datetime
+	updatedAt: datetime
+
+@dataclass
+class Connection:
+	is_admin: bool
+	websocket: WebSocket
+class ConnectionManager:
+	def __init__(self):
+		self.active_connections: list[Connection] = []
+
+	async def connect(self, websocket: WebSocket, is_admin: bool = False):
+		await websocket.accept()
+		self.active_connections.append(Connection(is_admin, websocket))
+
+	def disconnect(self, websocket: WebSocket, is_admin: bool = False):
+		self.active_connections.remove(Connection(is_admin, websocket))
+
+	async def send_personal_message(self, message: Json, websocket: WebSocket):
+		await websocket.send_text(message)
+
+	async def broadcast_admin(self, message: Json):
+		# pdb.set_trace()
+		for connection in self.active_connections:
+			if connection.is_admin is True:
+				await connection.websocket.send_text(message)
+
+	async def broadcast_users(self, message: Json):
+		for connection in self.active_connections:
+			if connection.is_admin is False:
+				await connection.websocket.send_text(message)
+
+	async def receive_text(self, websocket: WebSocket):
+		message = await websocket.receive_text()
+		return message
+
+manager = ConnectionManager()
 
 # FUNCIONES
 async def is_admin(token: str):
 	if not token:
 		raise HTTPException(status_code=401, detail="Fallo de sesión")
-
-	if token != ADMIN_TOKEN:
+	token_payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+	if not token_payload.get('is_admin'):
 		raise HTTPException(status_code=401, detail="No eres administrador")
 
 	return True
+
+async def get_token_user_id(token: str):
+	if not token:
+		raise HTTPException(status_code=401, detail="Fallo de sesión")
+	token_payload = jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
+	if token_payload.get('is_admin'):
+		raise HTTPException(status_code=401, detail="Eres administrador")
+	return token_payload.get('user_id')
 
 async def generate_short_token():
 	return str(uuid.uuid4())[:10]
@@ -176,7 +250,7 @@ async def generate_short_token():
 # 		count = 0
 # 	return count
 
-# async def count_players(game_id: int):
+# async def count_users(game_id: int):
 # 	count = session.query(func.count(Result.id)).filter(Result.game_id == game_id).scalar()
 # 	if count is None:
 # 		count = 0
@@ -188,44 +262,40 @@ async def generate_short_token():
 # RUTAS DE SESION
 @app.post("/login")
 async def login(input_data: JSON_Login):
-	global ADMIN_TOKEN
-
 	user = input_data.username
 	password = input_data.password
 
-	if user == ADMIN_USER:
-		if password == ADMIN_PASSWORD:
-			token = await generate_short_token()
-			ADMIN_TOKEN = token
+	if user == settings.admin_user:
+		if password == settings.admin_password:
+			token = jwt.encode({"is_admin": True}, settings.jwt_secret, algorithm="HS256")
 			return {"detail": "Autenticación como administrador exitosa", "token": token}
 		else:
 			raise HTTPException(status_code=401, detail="Nombre o contraseña incorrecta")
 
-@app.post("/logout/token={token}")
-async def logout(token: str, response: Response):
-	global ADMIN_TOKEN, PLAYERS_TOKEN
-	if not token:
-		raise HTTPException(status_code=401, detail="No se encontró token de sesión")
+# @app.post("/logout/token={token}")
+# async def logout(token: str, response: Response):
+# 	if not token:
+# 		raise HTTPException(status_code=401, detail="No se encontró token de sesión")
 
-	if token == ADMIN_TOKEN:
-		ADMIN_TOKEN = None
-	elif token in PLAYERS_TOKEN:
-		del PLAYERS_TOKEN[token]
+# 	if token == ADMIN_TOKEN:
+# 		ADMIN_TOKEN = None
+# 	elif token in USERS_TOKEN:
+# 		del USERS_TOKEN[token]
 
-	return {"detail": "Sesión cerrada"}
+# 	return {"detail": "Sesión cerrada"}
 
-@app.get("/session/token={token}")
-async def actual_session(token: str):
-	if not token:
-		raise HTTPException(status_code=401, detail="No se encontró token de sesión")
+# @app.get("/session/token={token}")
+# async def actual_session(token: str):
+# 	if not token:
+# 		raise HTTPException(status_code=401, detail="No se encontró token de sesión")
 
-	if token == ADMIN_TOKEN:
-		return {"detail": "Sesión de administrador activa"}
-	elif token in PLAYERS_TOKEN:
-		return {"detail": f"Sesión de jugador activa: {PLAYERS_TOKEN[token]}"}
+# 	if token == ADMIN_TOKEN:
+# 		return {"detail": "Sesión de administrador activa"}
+# 	elif token in USERS_TOKEN:
+# 		return {"detail": f"Sesión de jugador activa: {USERS_TOKEN[token]}"}
 
-# RUTAS DE TESTS
-@app.get("/assessment/all/token={token}", response_model=List[JSON_Assessment_Output])
+# RUTAS DE ASSESSMENTS
+@app.get("/assessment/all/token={token}", response_model=List[JSON_Assessment_Full_Output])
 async def get_all_assessments(token: str):
 	await is_admin(token)
 	try:
@@ -237,7 +307,7 @@ async def get_all_assessments(token: str):
 		response = []
 
 		for assessment in all_assessments:
-			assessment_data = JSON_Assessment_Output(
+			assessment_data = JSON_Assessment_Full_Output(
 				id=assessment.id,
 				title=assessment.title,
 				image=assessment.image,
@@ -258,7 +328,7 @@ async def get_all_assessments(token: str):
 	finally:
 		session.close()
 
-@app.get("/assessment/{ID}/view/token={token}", response_model=JSON_Assessment_Output)
+@app.get("/assessment/{ID}/view/token={token}", response_model=JSON_Assessment_Full_Output)
 async def get_assessment_by_ID(token: str, ID: int):
 	await is_admin(token)
 	try:
@@ -274,10 +344,11 @@ async def get_assessment_by_ID(token: str, ID: int):
 				image=question.image,
 				questionType=question.questionType,
 				questionOrder=question.questionOrder,
-				selectOptions=[JSON_SelectOptions(title=option['title']) for option in question.selectOptions]			) for question in assessment.questions
-			]
+				selectOptions=[JSON_SelectOptions(title=option['title']) for option in question.selectOptions]
+			) for question in assessment.questions
+		]
 
-		response = JSON_Assessment_Output(
+		response = JSON_Assessment_Full_Output(
 			id=assessment.id,
 			title=assessment.title,
 			image=assessment.image,
@@ -368,7 +439,9 @@ async def create_assessment(token: str, input_data: JSON_Assessment_Input):
 				image=question_data.image,
 				questionType=question_data.questionType,
 				questionOrder=question_data.questionOrder,
-				selectOptions=[option.to_dict() for option in question_data.selectOptions]
+				selectOptions=[option.to_dict() for option in question_data.selectOptions],
+				createdAt=datetime.now(),
+				updatedAt=datetime.now()
 			)
 			session.add(new_question)
 			session.flush()
@@ -379,7 +452,7 @@ async def create_assessment(token: str, input_data: JSON_Assessment_Input):
 		raise e
 	except Exception as e:
 		session.rollback()
-		raise HTTPException(status_code=500, detail=f"Error al editar el assessment: {str(e)}")
+		raise HTTPException(status_code=500, detail=f"Error al crear el assessment: {str(e)}")
 	finally:
 		session.close()
 
@@ -462,49 +535,49 @@ async def edit_assessment(token: str, ID: int, input_data: JSON_Assessment_Edit_
 	finally:
 		session.close()
 
-
-
-
-
-# RUTAS DE RESULTADOS
-@app.get("/results/assessment/{ID}/all/token={token}", response_model=JSON_Assessment_Output)
-async def get_all_results(token: str, ID: int):
+# RUTAS DE ASSESSMENT INSTANCES
+@app.get("/assessment/{id}/assessment-instance/all/token={token}", response_model=JSON_Assessment_AssessmentInstances_Output)
+async def get_all_assessment_instances(token: str, id: int):
 	await is_admin(token)
 	try:
-		# Asegurar que el assessment exista
-		assessment = session.query(Assessment).filter(Assessment.id == ID).first()
-		if assessment is None:
-			raise HTTPException(status_code=404, detail="Assessment no encontrado")
+		assessment = session.query(Assessment).filter(Assessment.id == id).first()
+		print(assessment)
+		if not assessment:
+			raise HTTPException(status_code=404, detail="Evaluación no encontrada")
 
-		# Obtener todos los juegos para los assessments cuyo id es ID o cuyo actual_assessment_id es ID
-		assessments_ids = session.query(Assessment.id).filter(or_(Assessment.id == ID, Assessment.actual_assessment_id == ID)).all()
-		assessment_ids = [t[0] for t in assessments_ids]  # Extraer solo los identificadores de assessment
-
-		instances_for_this_assessment = session.query(AssessmentInstance).filter(AssessmentInstance.assessment_id.in_(assessment_ids)).all()
-		if not instances_for_this_assessment:
-			raise HTTPException(status_code=404, detail="No hay instancias para este assessment")
-
-		assessmentInstances_json = []
-		for instance in instances_for_this_assessment:
-			instance_data = JSON_AssessmentInstance_Output(
+		assessmentInstances_data = []
+		for instance in assessment.assessmentInstances:
+			response_data = JSON_AssessmentInstance_Output(
 				id=instance.id,
+				title=instance.title,
 				assessment_id=instance.assessment_id,
-				title=instance.title
+				users=sorted(
+					[
+						JSON_User_Output(
+							id=user.id,
+							name=user.name,
+							email=user.email,
+							order=user.order,
+							group=user.group,
+							pin=user.pin,
+							voteEveryone=user.voteEveryone
+						) for user in instance.users
+					],
+					key=lambda user: user.order
+				),
+				actual_user=None,
+				active=instance.active,
+				finished=instance.finished,
+				answers=None,
+				assessment=None
 			)
-			assessmentInstances_json.append(instance_data)
-
-		response_data = JSON_Assessment_Output(
+			assessmentInstances_data.append(response_data)
+		response = JSON_Assessment_AssessmentInstances_Output(
 			id=assessment.id,
 			title=assessment.title,
-			image=assessment.image,
-			archived=assessment.archived,
-			createdAt=assessment.createdAt,
-			updatedAt=assessment.updatedAt,
-			questions=None,  # Suponiendo que la implementación para preguntas es similar
-			assessmentInstances=assessmentInstances_json
+			assessmentInstances=assessmentInstances_data
 		)
-
-		return response_data
+		return response
 	except HTTPException as e:
 		raise e
 	except Exception as e:
@@ -512,49 +585,128 @@ async def get_all_results(token: str, ID: int):
 	finally:
 		session.close()
 
-@app.get("/results/assessment/{ID}/assessmentInstance/{ASSESSMENTINSTANCE_ID}/token={token}", response_model=JSON_Assessment_Output)
-async def get_results_by_assessmentInstance(token: str, ID: int, ASSESSMENTINSTANCE_ID: int):
+@app.post("/assessment/{id}/assessment-instance/create/token={token}")
+async def create_assessment_instance(token: str, id: int, input_data: JSON_AssessmentInstance_Input):
 	await is_admin(token)
 	try:
-		assessment = session.query(Assessment).filter(Assessment.id == ID).first()
-		if assessment is None:
-			raise HTTPException(status_code=404, detail="Assessment no encontrado")
+		assessment = session.query(Assessment).filter(Assessment.id == id).first()
+		if not assessment:
+			raise HTTPException(status_code=404, detail="Evaluación no encontrada")
 
-		assessmentInstance= session.query(AssessmentInstance).filter(AssessmentInstance.assessment_id == ID, AssessmentInstance.id == ASSESSMENTINSTANCE_ID).first()
-		if not assessmentInstance:
-			raise HTTPException(status_code=404, detail="No hay juegos para este assessment, o el juego no existe")
-
-		assessmentInstance_json = []
-		assessmentInstance_json.append(JSON_AssessmentInstance_Output(
-			id=assessmentInstance.id,
-			assessment_id=assessmentInstance.assessment_id,
-			title=assessmentInstance.title
-		))
-
-		questions_data = [
-			JSON_Question_Output(
-				id=question.id,
-				assessment_id=question.assessment_id,
-				title=question.title,
-				image=question.image,
-				questionType=question.questionType,
-				questionOrder=question.questionOrder,
-				selectOptions= [JSON_SelectOptions.from_dict(option) for option in question.selectOptions]
-			) for question in assessment.questions
-		]
-
-		response_data = JSON_Assessment_Output(
-			id=assessment.id,
-			title=assessment.title,
-			image=assessment.image,
-			archived=assessment.archived,
-			createdAt=assessment.createdAt,
-			updatedAt=assessment.updatedAt,
-			questions=questions_data,
-			assessmentInstances=assessmentInstance_json
+		new_assessmentInstance = AssessmentInstance(
+			title=input_data.title,
+			assessment_id=assessment.id,
 		)
+		session.add(new_assessmentInstance)
+		session.flush()
 
-		return response_data
+		session.commit()
+
+		return {"detail": "Evaluación guardada correctamente con ID: {}".format(new_assessmentInstance.id)}
+	except HTTPException as e:
+		raise e
+	except Exception as e:
+		session.rollback()
+		raise HTTPException(status_code=500, detail=f"Error al guardar evaluación: {str(e)}")
+	finally:
+		session.close()
+
+@app.get("/assessment-instance/active/token={token}", response_model=JSON_AssessmentInstance_Output)
+async def get_active_assessment_instance(token: str):
+	try:
+		# pdb.set_trace()
+		token_is_admin = await (is_admin(token))
+		users_data = None
+		answers_data = None
+		assessment_data = None
+		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
+		if not assessmentInstance:
+			raise HTTPException(status_code=404, detail="Evaluación no encontrada")
+		actual_user = session.query(User).filter(User.id == assessmentInstance.actual_user_id).first()
+		actual_user_data = JSON_User_Output(
+			id=actual_user.id,
+			name=actual_user.name,
+			email=actual_user.email,
+			order=actual_user.order,
+			group=actual_user.group,
+			pin=actual_user.pin,
+			voteEveryone=actual_user.voteEveryone
+		) if actual_user else None
+		if token_is_admin:
+			users_data = sorted(
+					[
+					JSON_User_Output(
+						id=user.id,
+						name=user.name,
+						email=user.email,
+						order=user.order,
+						group=user.group,
+						pin=user.pin,
+						voteEveryone=user.voteEveryone
+					) for user in assessmentInstance.users
+				],
+				key=lambda user: user.order
+			)
+		else:
+			user_id = await get_token_user_id(token)
+			user = session.query(User).filter(User.id == user_id).first()
+			if not user:
+				raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+			if user.assessment_instance_id != assessmentInstance.id:
+				raise HTTPException(status_code=404, detail="Usuario no encontrado en esta evaluación")
+
+			answers = session.query(Answer).filter(Answer.assessment_instance_id == assessmentInstance.id, Answer.grading_user_id == user.id).all()
+			if len(answers) > 0:
+				answers_data = [
+					JSON_Answer_Output(
+						id=answer.id,
+						assessment_instance_id=answer.assessment_instance_id,
+						question_id=answer.question_id,
+						grading_user_id=answer.grading_user_id,
+						graded_user_id=answer.graded_user_id,
+						answerText=answer.answerText,
+						date=answer.date
+					) for answer in answers
+				]
+			elif user.voteEveryone or user.group == actual_user.group:
+				assessment = session.query(Assessment).filter(Assessment.id == assessmentInstance.assessment_id).first()
+				assessment_data = JSON_Assessment_Output(
+					id=assessment.id,
+					title=assessment.title,
+					image=assessment.image,
+					archived=assessment.archived,
+					questions= sorted(
+						[
+							JSON_Question_Output(
+								id=question.id,
+								assessment_id=question.assessment_id,
+								title=question.title,
+								image=question.image,
+								questionType=question.questionType,
+								questionOrder=question.questionOrder,
+								selectOptions= [JSON_SelectOptions.from_dict(option) for option in question.selectOptions]
+							) for question in assessment.questions
+						],
+						key=lambda question: question.questionOrder
+					)
+				)
+			else:
+				actual_user_id = None
+				actual_user_name = None
+
+		response = JSON_AssessmentInstance_Output(
+			id=assessmentInstance.id,
+			title=assessmentInstance.title,
+			assessment_id=assessmentInstance.assessment_id,
+			users=users_data,
+			actual_user=actual_user_data,
+			active=assessmentInstance.active,
+			finished=assessmentInstance.finished,
+			answers=answers_data,
+			assessment=assessment_data
+		)
+		return response
 	except HTTPException as e:
 		raise e
 	except Exception as e:
@@ -562,898 +714,416 @@ async def get_results_by_assessmentInstance(token: str, ID: int, ASSESSMENTINSTA
 	finally:
 		session.close()
 
-# @app.get("/results/player/{ID}/all/token={token}")
-# async def get_all_results_by_player(token: str, ID: int, response_model=List[JSON_Test_Output]):
-# 	await is_admin(token)
+@app.get("/assessment-instance/{ID}/token={token}", response_model=JSON_AssessmentInstance_Output)
+async def get_assessment_instance_by_ID(token: str, ID: int):
+	token_is_admin = await (is_admin(token))
+	if token_is_admin:
+		try:
+			assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == ID).first()
+			if not assessmentInstance:
+				raise HTTPException(status_code=404, detail="Evaluación no encontrada")
+
+			users_data = sorted(
+				[
+					JSON_User_Output(
+						id=user.id,
+						name=user.name,
+						email=user.email,
+						order=user.order,
+						group=user.group,
+						pin=user.pin,
+						voteEveryone=user.voteEveryone
+					) for user in assessmentInstance.users
+				],
+				key=lambda user: user.order
+			)
+
+			response = JSON_AssessmentInstance_Output(
+				id=assessmentInstance.id,
+				title=assessmentInstance.title,
+				assessment_id=assessmentInstance.assessment_id,
+				users=users_data,
+				active=assessmentInstance.active,
+				actual_user=None,
+				finished=assessmentInstance.finished,
+				answers=None,
+				assessment=None
+			)
+
+			return response
+		except HTTPException as e:
+			raise e
+		except Exception as e:
+			raise HTTPException(status_code=500, detail=f"Error al obtener la evaluación: {str(e)}")
+		finally:
+			session.close()
+	else:
+		user_id = await get_token_user_id(token)
+		try:
+			user = session.query(User).filter(User.id == user_id).first()
+			if not user:
+				raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+			assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == ID).first()
+			if not assessmentInstance:
+				raise HTTPException(status_code=404, detail="Evaluación no encontrada")
+
+			if user.assessment_instance_id != assessmentInstance.id:
+				raise HTTPException(status_code=404, detail="Usuario no encontrado en esta evaluación")
+
+			assessment = session.query(Assessment).filter(Assessment.id == assessmentInstance.assessment_id).first()
+
+			response = JSON_AssessmentInstance_Output(
+				id=assessmentInstance.id,
+				title=assessmentInstance.title,
+				assessment_id=assessmentInstance.assessment_id,
+				users=None,
+				actual_user=None,
+				active=assessmentInstance.active,
+				finished=assessmentInstance.finished,
+				answers=None,
+				assessment=JSON_Assessment_Output(
+					id=assessment.id,
+					title=assessment.title,
+					image=assessment.image,
+					archived=assessment.archived,
+					questions=sorted(
+						[
+							JSON_Question_Output(
+								id=question.id,
+								assessment_id=question.assessment_id,
+								title=question.title,
+								image=question.image,
+								questionType=question.questionType,
+								questionOrder=question.questionOrder,
+								selectOptions=[JSON_SelectOptions.from_dict(option) for option in question.selectOptions]
+							) for question in assessment.questions
+						],
+						key=lambda question: question.questionOrder
+					)
+				)
+			)
+
+			return response
+		except HTTPException as e:
+			raise e
+		except Exception as e:
+			raise HTTPException(status_code=500, detail=f"Error al obtener la evaluación: {str(e)}")
+		finally:
+			session.close()
+
+def generate_unique_pin(session, assessment_instance_id: int) -> str:
+	while True:
+		pin = "".join([str(random.randint(0, 9)) for _ in range(6)])
+		existing_user = session.query(User).filter_by(assessment_instance_id=assessment_instance_id, pin=pin).first()
+		if not existing_user:
+			return pin
+
+@app.post("/assessment-instance/{ID}/users/upload/token={token}")
+async def add_users_from_csv(token: str, ID: int, file: UploadFile = File(...)):
+	await is_admin(token)
+	try:
+		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == ID).first()
+		if not assessmentInstance:
+			raise HTTPException(status_code=404, detail="Evaluación no encontrada")
+
+		content = await file.read()
+		file_content = StringIO(content.decode("utf-8"))
+		csv_reader = csv.DictReader(file_content)
+
+		for row in csv_reader:
+			unique_pin = generate_unique_pin(session, assessmentInstance.id)
+			new_user = User(
+				name=row["name"],
+				email=row["email"],
+				assessment_instance_id=assessmentInstance.id,
+				order=row["order"],
+				group=row["group"],
+				pin=unique_pin,
+				voteEveryone=row["voteEveryone"] == "True" #TODO voteEveryone se tiene que rellenar como "True" para que sea True, con cualquier otro valor será False
+			)
+			session.add(new_user)
+			session.flush()
+
+		session.commit()
+
+		return {"detail": "Usuarios guardados correctamente"}
+	except HTTPException as e:
+		raise e
+	except Exception as e:
+		session.rollback()
+		raise HTTPException(status_code=500, detail=f"Error al guardar usuarios: {str(e)}")
+	finally:
+		session.close()
+
+@app.delete("/assessment-instance/{ID}/delete/token={token}")
+async def delete_assessment_instance_by_ID(token: str, ID: int):
+	await is_admin(token)
+	try:
+		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == ID).first()
+		if not assessmentInstance:
+			raise HTTPException(status_code=404, detail="Evaluación no encontrada")
+
+		session.delete(assessmentInstance)
+		session.commit()
+
+		return {"detail": "Evaluación eliminada correctamente"}
+	except HTTPException as e:
+		raise e
+	except Exception as e:
+		session.rollback()
+		raise HTTPException(status_code=500, detail=f"Error al eliminar la evaluación: {str(e)}")
+	finally:
+		session.close()
+
+@app.websocket("/assessment-instance/{id}/start/token={token}")
+async def start_assessment_instance(websocket: WebSocket,id: int, token: str):
+	await manager.connect(websocket, is_admin=True)
+	await is_admin(token)
+	try:
+		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == id).first()
+		if not assessmentInstance:
+			raise WebSocketException(code=1003, reason="Evaluación no encontrada")
+
+		assessmentInstance.active = True
+		users = session.query(User).filter(User.assessment_instance_id == id).all()
+		sorted_users = sorted(users, key=lambda user: user.order)
+		filtered_users = [user for user in sorted_users if user.order != -1]
+		assessmentInstance.actual_user_id = filtered_users[0].id
+		session.commit()
+
+		# TODO send refresh of assessment via websocket
+		# pdb.set_trace()
+		info = {
+			"mode": "LOBBY",
+			"assessment_instance_id": id,
+			"actual_user_id": assessmentInstance.actual_user_id,
+			"actual_user_name": filtered_users[0].name,
+		}
+		info_json = json.dumps(info)
+		await manager.send_personal_message(info_json, websocket=websocket)
+		# pdb.set_trace()
+		try:
+			while True:
+				message = await manager.receive_text(websocket)
+				if message == "CLOSE":
+					assessmentInstance.active = False
+					session.commit()
+					info = {
+						"event": "CLOSE",
+					}
+					info_json = json.dumps(info)
+					await manager.broadcast_admin(info_json)
+					await manager.broadcast_users(info_json)
+					await manager.disconnect(websocket, is_admin=True)
+					break
+				if message == "START":
+					info = {
+						"mode": "PLAYING",
+						"event": "REFRESH"
+					}
+					info_json = json.dumps(info)
+					await manager.broadcast_admin(info_json)
+					await manager.broadcast_users(info_json)
+					# break
+		except WebSocketDisconnect:
+			manager.disconnect(websocket, is_admin=True)
+	except HTTPException as e:
+		raise e
+	except Exception as e:
+		session.rollback()
+		raise HTTPException(status_code=500, detail=f"Error al iniciar la evaluación: {str(e)}")
+	finally:
+		session.close()
+
+@app.post("/next/token={token}")
+async def next_user_assessment_instance(token: str):
+	await is_admin(token)
+	try:
+		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
+		if not assessmentInstance:
+			raise HTTPException(status_code=404, detail="No hay evaluación activa")
+
+		current_user = session.query(User).filter(User.id == assessmentInstance.actual_user_id).first()
+		if not current_user:
+			raise HTTPException(status_code=404, detail="No hay usuario actual")
+
+		next_user = session.query(User).filter(User.assessment_instance_id == assessmentInstance.id, User.order > current_user.order).order_by(User.order).first()
+		if not next_user:
+			assessmentInstance.actual_user_id = None
+			assessmentInstance.active = False
+			assessmentInstance.finished = True
+			session.commit()
+			info = {
+				"mode": "END",
+				"event": "FINISH",
+			}
+			info_json = json.dumps(info)
+			await manager.broadcast_admin(info_json)
+			await manager.broadcast_users(info_json)
+			return {"detail": "Fin de la evaluación"}
+
+		assessmentInstance.actual_user_id = next_user.id
+		session.commit()
+		info = {
+			"mode": "LOBBY",
+			"event": "REFRESH",
+		}
+		info_json = json.dumps(info)
+		await manager.broadcast_admin(info_json)
+		await manager.broadcast_users(info_json)
+		# TODO send refresh of assessment via websocket
+		return {"detail": "Siguiente usuario"}
+	except HTTPException as e:
+		raise e
+	except Exception as e:
+		session.rollback()
+		raise HTTPException(status_code=500, detail=f"Error al pasar al siguiente usuario: {str(e)}")
+	finally:
+		session.close()
+
+# RUTAS DE USUARIOS
+@app.post("/user-login")
+async def login(input_data: JSON_User_Login):
+	active_assessment_instance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
+	if not active_assessment_instance:
+		raise HTTPException(status_code=404, detail="No hay evaluación activa")
+	user = session.query(User).filter(User.pin == input_data.pin, User.assessment_instance_id == active_assessment_instance.id).first()
+	if not user:
+		raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+	token = jwt.encode({"user_id": user.id}, settings.jwt_secret, algorithm="HS256")
+	return {"detail": "Autenticación exitosa", "token": token}
+
+@app.websocket("/play/token={token}")
+async def play(websocket: WebSocket, token: str):
+	await manager.connect(websocket)
+	user_id = await get_token_user_id(token)
+	info = {
+			"mode": "LOBBY",
+		}
+	info_json = json.dumps(info)
+	await manager.send_personal_message(info_json, websocket=websocket)
+	try:
+		user = session.query(User).filter(User.id == user_id).first()
+		if not user:
+			raise WebSocketException(code=1003, reason="Usuario no encontrado")
+		user = {
+			"mode": "LOBBY",
+			"event": "CONNECT",
+			"user_id": user_id,
+			"name": user.name,
+		}
+		user_json = json.dumps(user)
+		await manager.broadcast_admin(user_json)
+		while True:
+			message = await manager.receive_text(websocket)
+			# if message == "NEXT":
+	except HTTPException as e:
+		raise e
+	except Exception as e:
+		raise HTTPException(status_code=500, detail=f"Error al iniciar la evaluación: {str(e)}")
+	finally:
+		session.close()
+
+@app.post("/user/answer/token={token}")
+async def add_user_answer(token: str, input_data: JSON_User_Answer_Inputs):
+	user_id = await get_token_user_id(token)
+	try:
+		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
+		if not assessmentInstance:
+			raise HTTPException(status_code=404, detail="No hay evaluación activa")
+		user = session.query(User).filter(User.id == user_id, User.assessment_instance_id == assessmentInstance.id).first()
+		if not user:
+			raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+		for answer_data in input_data.answers:
+			new_answer = Answer(
+				assessment_instance_id=assessmentInstance.id,
+				question_id=answer_data.question_id,
+				grading_user_id=user.id,
+				graded_user_id=assessmentInstance.actual_user_id,
+				answerText=answer_data.answerText,
+				date=datetime.now()
+			)
+			session.add(new_answer)
+
+		session.commit()
+		return {"detail": "Respuestas guardadas correctamente"}
+	except HTTPException as e:
+		raise e
+	except Exception as e:
+		session.rollback()
+		raise HTTPException(status_code=500, detail=f"Error al guardar respuestas: {str(e)}")
+	finally:
+		session.close()
+
+# @app.get("/user/answers-summary/token={token}", response_model=JSON_AssessmentInstance_Output)
+# async def get_user_answers(token: str):
+# 	user_id = await get_token_user_id(token)
 # 	try:
-# 		player = session.query(Player).filter(Player.id == ID).first()
-# 		if player is None:
-# 			raise HTTPException(status_code=404, detail="Jugador no encontrado")
+# 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
+# 		if not assessmentInstance:
+# 			raise HTTPException(status_code=404, detail="No hay evaluación activa")
+# 		# check if user is in this assessment instance
+# 		user = session.query(User).filter(User.id == user_id, User.assessment_instance_id == assessmentInstance.id).first()
+# 		if not user:
+# 			raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-# 		results = session.query(Result).filter(Result.player_id == ID).all()
-# 		if not results:
-# 			raise HTTPException(status_code=404, detail="No hay resultados para este jugador")
+# 		answers = session.query(Answer).filter(Answer.assessment_instance_id == assessmentInstance.id, Answer.grading_user_id == user.id, Answer.graded_user_id == assessmentInstance.actual_user_id).all()
+# 		if not answers:
+# 			raise HTTPException(status_code=404, detail="No hay respuestas para este usuario")
 
-# 		gamesId = {result.game_id for result in results}
-# 		games = session.query(AssessmentInstance).filter(Game.id.in_(gamesId)).all()
-# 		if not games:
-# 			raise HTTPException(status_code=404, detail="No hay juegos para este jugador")
-
-# 		testsId = {game.test_id for game in games}
-# 		tests = session.query(Test).filter(Test.id.in_(testsId)).all()
-# 		if not tests:
-# 			raise HTTPException(status_code=404, detail="No hay tests para este jugador")
-
-# 		games_dict = {game.id: game for game in games}
-# 		tests_dict = {test.id: test for test in tests}
-# 		results_dict = {}
-# 		for result in results:
-# 			results_dict.setdefault(result.game_id, []).append(result)
-
-# 		response_data = []
-# 		for test_id, test in tests_dict.items():
-# 			games_json = []
-# 			for game_id, game in games_dict.items():
-# 				if game.test_id == test_id:
-# 					results_json = [JSON_Result_Output(
-# 						id=result.id,
-# 						player_id=result.player_id,
-# 						player_name=session.query(Player).filter(Player.id == result.player_id).first().name,
-# 						game_id=result.game_id,
-# 						score=result.score,
-# 						solutions=None
-# 					) for result in results_dict.get(game_id, [])]
-
-# 					game_data = JSON_Game_Output(
-# 						id=game.id,
-# 						test_id=game.test_id,
-# 						playedAt=game.playedAt.isoformat() if game.playedAt else None,
-# 						players=await count_players(game.id),
-# 						results=results_json
-# 					)
-# 					games_json.append(game_data)
-
-# 			test_data = JSON_Test_Output(
-# 				id=test.id,
-# 				title=test.title,
-# 				image=test.image,
-# 				archived=test.archived,
-# 				played=await count_games(test.id),
-# 				createdAt=test.createdAt,
-# 				updatedAt=test.updatedAt,
-# 				questions=None,
-# 				games=games_json
-# 			)
-# 			response_data.append(test_data)
-
-# 		return response_data
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		raise HTTPException(status_code=500, detail=f"Error al obtener los test: {str(e)}")
-# 	finally:
-# 		session.close()
-
-# @app.get("/results/player/{ID}/game/{ASSESSMENTINSTANCE_ID}/token={token}")
-# async def get_results_by_player(token: str, ID: int, GAME_ID: int):
-# 	await is_admin(token)
-# 	try:
-# 		player = session.query(Player).filter(Player.id == ID).first()
-# 		if player is None:
-# 			raise HTTPException(status_code=404, detail="Jugador no encontrado")
-
-# 		result = session.query(Result).filter(Result.player_id == ID, Result.game_id == GAME_ID).first()
-# 		if result is None:
-# 			raise HTTPException(status_code=404, detail="No hay resultados para este jugador en este juego")
-
-# 		solution = session.query(Solution).filter(Solution.result_id == result.id).all()
-# 		if solution is None:
-# 			raise HTTPException(status_code=404, detail="No hay soluciones para este jugador en este juego")
-
-# 		game = session.query(Game).filter(Game.id == GAME_ID).first()
-# 		if game is None:
-# 			raise HTTPException(status_code=404, detail="Juego no encontrado")
-
-# 		test = session.query(Test).filter(Test.id == game.test_id).first()
-# 		if test is None:
-# 			raise HTTPException(status_code=404, detail="Test no encontrado")
-# 		result_data = [
-# 			JSON_Result_Output(
-# 			id=result.id,
-# 			player_id=result.player_id,
-# 			player_name=session.query(Player).filter(Player.id == ID).first().name,
-# 			game_id=result.game_id,
-# 			score=result.score,
-# 			solutions=[
-# 				JSON_Solution_Output(
-# 					id=solution.id,
-# 					result_id=solution.result_id,
-# 					question_id=solution.question_id,
-# 					answer_id=solution.answer_id,
-# 					time=solution.time
-# 				) for solution in solution
-# 			]
-# 		)
-# 		]
-
-# 		game_data = [
-# 			JSON_Game_Output(
-# 			id=game.id,
-# 			test_id=game.test_id,
-# 			playedAt=game.playedAt.isoformat() if game.playedAt else None,
-# 			players=await count_players(game.id),
-# 			results=result_data
-# 		)]
+# 		assessment = session.query(Assessment).filter(Assessment.id == assessmentInstance.assessment_id).first()
+# 		if not assessment:
+# 			raise HTTPException(status_code=404, detail="Evaluación no encontrada")
 
 # 		questions_data = [
 # 			JSON_Question_Output(
 # 				id=question.id,
-# 				test_id=question.test_id,
+# 				assessment_id=question.assessment_id,
 # 				title=question.title,
 # 				image=question.image,
-# 				#questionType=question.questionType,
-# 				allocatedTime=question.allocatedTime,
+# 				questionType=question.questionType,
 # 				questionOrder=question.questionOrder,
-# 				weight=question.weight,
-# 				answers=[
-# 					JSON_Answer_Output(
-# 						id=answer.id,
-# 						question_id=answer.question_id,
-# 						title=answer.title,
-# 						isCorrect=answer.isCorrect
-# 					) for answer in question.answers
-# 				]
-# 			) for question in test.questions
-# 			]
-
-# 		response_data = JSON_Test_Output(
-# 			id=test.id,
-# 			title=test.title,
-# 			image=test.image,
-# 			archived=test.archived,
-# 			played=await count_games(test.id),
-# 			createdAt=test.createdAt,
-# 			updatedAt=test.updatedAt,
-# 			questions=questions_data,
-# 			games=game_data
-# 		)
-
-# 		return response_data
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		raise HTTPException(status_code=500, detail=f"Error al obtener el test: {str(e)}")
-# 	finally:
-# 		session.close()
-
-# @app.put("/results/game/token={token}")
-# async def create_game(token: str, input_data: JSON_Game_Input):
-# 	await is_admin(token)
-# 	try:
-# 		test = session.query(Test).filter(Test.id == input_data.test_id).first()
-# 		if not test:
-# 			raise HTTPException(status_code=404, detail="Test no encontrado")
-
-# 		new_game = Game(
-# 			test_id=test.id,
-# 			playedAt=datetime.now()
-# 		)
-# 		session.add(new_game)
-# 		session.flush()
-
-# 		for result_data in input_data.results:
-# 			if not session.query(Player).filter(Player.id == result_data.player_id).first():
-# 				raise HTTPException(status_code=404, detail="Jugador no encontrado")
-
-# 			new_result = Result(
-# 				player_id=result_data.player_id,
-# 				game_id=new_game.id,
-# 				score=result_data.score
-# 			)
-# 			session.add(new_result)
-# 			session.flush()
-
-# 			for solution_data in result_data.solutions:
-# 				if not session.query(Question).filter(Question.id == solution_data.question_id).first():
-# 					raise HTTPException(status_code=404, detail="pregunta_raw no encontrada")
-
-# 				new_solution = Solution(
-# 					result_id=new_result.id,
-# 					question_id=solution_data.question_id,
-# 					answer_id=solution_data.answer_id,
-# 					time=solution_data.time
-# 				)
-# 				session.add(new_solution)
-
-# 		session.commit()
-
-# 		return {"detail": "Partida guardada correctamente con ID: {}".format(new_game.id)}
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		session.rollback()
-# 		raise HTTPException(status_code=500, detail=f"Error al guardar partida: {str(e)}")
-# 	finally:
-# 		session.close()
-
-# @app.delete("/results/{ID}/delete/token={token}")
-# async def delete_game(token: str, ID: int):
-# 	await is_admin(token)
-# 	try:
-# 		game_to_delete = session.query(Game).filter(Game.id == ID).first()
-# 		if game_to_delete is None:
-# 			raise HTTPException(status_code=404, detail="Juego no encontrado")
-# 		session.delete(game_to_delete)
-# 		session.commit()
-# 		return {"detail": "Juego eliminado correctamente"}
-
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		session.rollback()
-# 		raise HTTPException(status_code=500, detail=f"Error al eliminar el juego: {str(e)}")
-# 	finally:
-# 		session.close()
-
-
-# # RUTAS DE JUGADORES
-# @app.put("/player/add/token={token}")
-# async def create_player(token: str):
-# 	await is_admin(token)
-# 	try:
-# 		for username in PLAYERS_TOKEN.values():
-# 			existing_player = session.query(Player).filter(Player.name == username).first()
-# 			if not existing_player:
-# 				new_player = Player(
-# 					name=username,
-# 					createdAt=datetime.now()
-# 				)
-# 				session.add(new_player)
-
-# 		session.commit()
-# 		return {"detail": "Jugadores creados correctamente"}
-
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		session.rollback()
-# 		raise HTTPException(status_code=500, detail=f"Error al crear los jugadores: {str(e)}")
-# 	finally:
-# 		session.close()
-
-# @app.get("/player/all/token={token}", response_model=List[JSON_Player_Output])
-# async def get_all_players(token: str):
-# 	await is_admin(token)
-# 	try:
-# 		all_players = session.query(Player).all()
-
-# 		if not all_players:
-# 			raise HTTPException(status_code=404, detail="No hay jugadores")
-
-
-# 		response_data = []
-# 		for player in all_players:
-# 			player_data = JSON_Player_Output(
-# 				id=player.id,
-# 				name=player.name,
-# 				createdAt=player.createdAt,
-# 				results=None
-# 			)
-
-# 			response_data.append(player_data)
-
-# 		return response_data
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		raise HTTPException(status_code=500, detail=f"Error al obtener los jugadores: {str(e)}")
-# 	finally:
-# 		session.close()
-
-# @app.delete("/player/{ID}/delete/token={token}")
-# async def delete_player(token: str, ID: int):
-# 	await is_admin(token)
-# 	try:
-# 		player_to_delete = session.query(Player).filter(Player.id == ID).first()
-# 		if player_to_delete is None:
-# 			raise HTTPException(status_code=404, detail="Jugador no encontrado")
-# 		session.delete(player_to_delete)
-# 		session.commit()
-# 		return {"detail": "Jugador eliminado correctamente"}
-
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		session.rollback()
-# 		raise HTTPException(status_code=500, detail=f"Error al eliminar el jugador: {str(e)}")
-# 	finally:
-# 		session.close()
-
-
-# RUTAS DE WEBSOCKET
-
-MODE = None
-PIN = None
-TEST = None
-TOTAL_QUESTIONS = 0
-
-CURRENT_QUESTION = 0
-TOTAL_RESPONSES = 0
-TIME = 0
-COUNTDOWN = 0
-
-RESULTS_CALCULATED = False
-TAREA_TRANSMITIR = None
-
-ADMIN_CONNECTION = None
-PLAYERS_CONNECTIONS = {}
-TEMP_RESULTS = {}
-SUMMARY = []
-
-# TODO Gestion de las evaluaciones, websockets etc
-
-# @app.websocket("/play/assessment={assessmentID}/token={token}")
-# async def admin_websocket(websocket: WebSocket, assessmentID: int, token: str):
-# 	global ADMIN_CONNECTION, TAREA_TRANSMITIR
-# 	await websocket.accept()
-
-# 	try:
-# 		if not token or token != ADMIN_TOKEN:
-# 			await websocket.send_text(json.dumps({"error": "Fallo de sesión"}))
-# 			return
-
-# 		await initial_setup(assessmentID)
-
-# 		if not TEST:
-# 			await websocket.send_text(json.dumps({"error": "Test no encontrado"}))
-# 			return
-
-# 		ADMIN_CONNECTION = websocket
-
-# 		if TAREA_TRANSMITIR is None or TAREA_TRANSMITIR.done():
-# 			TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-# 		receive_task = asyncio.create_task(recibir_admin())
-# 		await asyncio.gather(receive_task)
-
-# 	except (Exception, WebSocketDisconnect) as e:
-# 		if websocket.client_state != WebSocketState.DISCONNECTED:
-# 			await websocket.send_text(json.dumps({"error": f"Error: {str(e)}"}))
-
-# 	finally:
-# 		await close_all_connections()
-
-# async def initial_setup(assessmentID: int):
-# 	global MODE, PIN, TEST, TOTAL_QUESTIONS, CURRENT_QUESTION, TOTAL_RESPONSES, TIME, RESULTS_CALCULATED, PLAYERS_TOKEN, ADMIN_CONNECTION, PLAYERS_CONNECTIONS, TEMP_RESULTS, SUMMARY
-
-# 	MODE = "LOBBY"
-# 	PIN = await generate_PIN()
-# 	TEST = await getAssessment(assessmentID)
-# 	TOTAL_QUESTIONS = len(TEST.questions)
-
-# 	CURRENT_QUESTION = 0
-# 	TOTAL_RESPONSES = 0
-# 	TIME = 0
-
-# 	RESULTS_CALCULATED = False
-
-# 	ADMIN_CONNECTION = None
-# 	PLAYERS_TOKEN.clear()
-# 	PLAYERS_CONNECTIONS.clear()
-# 	TEMP_RESULTS.clear()
-# 	SUMMARY.clear()
-
-# 	return
-
-# async def generate_PIN():
-# 	return random.randint(100000, 999999)
-
-# async def getAssessment(assessmentID: int):
-# 	assessment = session.query(Assessment).filter(Assessment.id == assessmentID).first()
-# 	if assessment is None:
-# 		raise WebSocketDisconnect("Assessment no encontrado")
-
-# 	questions_data = [
-# 		JSON_Question_Output(
-# 			id=question.id,
-# 			assessment_id=question.assessment_id,
-# 			title=question.title,
-# 			image=question.image,
-# 			questionType=question.questionType,
-# 			questionOrder=question.questionOrder,
-# 			selectOptions=question.selectOptions
-# 		) for question in assessment.questions
+# 				selectOptions= [JSON_SelectOptions.from_dict(option) for option in question.selectOptions]
+# 			) for question in assessment.questions
 # 		]
 
-# 	response = JSON_Assessment_Output(
-# 		id=assessment.id,
-# 		title=assessment.title,
-# 		image=assessment.image,
-# 		archived=assessment.archived,
-# 		createdAt=assessment.createdAt,
-# 		updatedAt=assessment.updatedAt,
-# 		questions=questions_data,
-# 		assessmentInstances=None
-# 	)
+# 		answers_data = [
+# 			JSON_Answer_Output(
+# 				id=answer.id,
+# 				assessment_instance_id=answer.assessment_instance_id,
+# 				question_id=answer.question_id,
+# 				grading_user_id=answer.grading_user_id,
+# 				graded_user_id=answer.graded_user_id,
+# 				answerText=answer.answerText,
+# 				date=answer.date
+# 			) for answer in answers
+# 		]
 
-# 	return response
-
-# async def close_all_connections():
-# 	for _, connection in PLAYERS_CONNECTIONS.items():
-# 		await connection.close()
-
-# async def broadcast():
-# 	for token, connection in PLAYERS_CONNECTIONS.items():
-# 		await transmitir_jugadores(websocket=connection, token=token)
-
-# async def calculate_results():
-# 	global TEMP_RESULTS, SUMMARY, RESULTS_CALCULATED
-
-# 	if not RESULTS_CALCULATED:
-# 		temp_stats = {}
-
-# 		for token in TEMP_RESULTS:
-# 			solucion_encontrada = False
-
-# 			for solution in TEMP_RESULTS[token].solutions:
-# 				if TEST.questions[CURRENT_QUESTION].id == solution.question_id:
-# 					temp_answer = session.query(Answer).filter(Answer.id == solution.answer_id).first()
-
-# 					if temp_answer and temp_answer.question_id == TEST.questions[CURRENT_QUESTION].id:
-# 						correct = temp_answer.isCorrect
-# 						if correct:
-# 							if solution.time >= TEST.questions[CURRENT_QUESTION].allocatedTime * 0.90:
-# 								TEMP_RESULTS[token].score += TEST.questions[CURRENT_QUESTION].weight
-# 							else:
-# 								TEMP_RESULTS[token].score += round((solution.time / TEST.questions[CURRENT_QUESTION].allocatedTime) * TEST.questions[CURRENT_QUESTION].weight)
-
-# 						temp_stats[token] = [TEST.questions[CURRENT_QUESTION].title, temp_answer.title, correct]
-# 						solucion_encontrada = True
-# 						break
-
-# 			if not solucion_encontrada:
-# 				temp_stats[token] = [TEST.questions[CURRENT_QUESTION].title, "No contestado", False]
-
-# 		SUMMARY.append(temp_stats)
-# 		RESULTS_CALCULATED = True
-
-# async def transmitir_admin():
-# 	global MODE, TIME, COUNTDOWN
-# 	loading_time = 5
-
-# 	if MODE == "LOBBY":
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"PIN": PIN,
-# 			"test": TEST.title,
-# 			"image": TEST.image,
-# 			"players": list(PLAYERS_TOKEN.values()),
-# 			"questions": TOTAL_QUESTIONS,
-# 			"instructions": "Esperando a que los jugadores se unan, enviar 'START' para comenzar la partida"
-# 		}
-# 		await ADMIN_CONNECTION.send_text(json.dumps(mensaje))
-
-# 		return
-
-# 	elif MODE == "LOADING":
-# 		for COUNTDOWN in range(loading_time, 0, -1):
-# 			mensaje = {
-# 				"mode": MODE,
-# 				"countdown": COUNTDOWN,
-# 				"time": TIME
-# 			}
-# 			await ADMIN_CONNECTION.send_text(json.dumps(mensaje))
-# 			await broadcast()
-# 			await asyncio.sleep(1)
-
-# 		MODE = "PLAYING"
-
-# 		Question = TEST.questions[CURRENT_QUESTION]
-# 		while TIME > 0:
-# 			mensaje = {
-# 				"mode": MODE,
-# 				"question": [
-# 					{
-# 						"question_id": Question.id,
-# 						"question_title": Question.title,
-# 						"question_image": Question.image,
-# 						#"question_type": Question.questionType,
-# 						"question_weight": Question.weight,
-# 						"question_answers": [
-# 							{
-# 								"answers_id": answer.id,
-# 								"answers_title": answer.title,
-# 							} for answer in Question.answers
-# 							]
-# 					}
-# 				],
-# 				"question_current": CURRENT_QUESTION,
-# 				"question_total": TOTAL_QUESTIONS,
-# 				"question_time": TIME,
-# 				"responses": TOTAL_RESPONSES,
-# 				"players": len(PLAYERS_TOKEN),
-# 				"instructions": "Puedes ver saltar a los resultados mandando 'SKIP'"
-# 			}
-
-# 			await ADMIN_CONNECTION.send_text(json.dumps(mensaje))
-# 			TIME -= 1
-# 			await broadcast()
-# 			await asyncio.sleep(1)
-
-# 		await calculate_results()
-# 		MODE = "RESULTS"
-
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"global_score": [
-# 				{
-# 					"player": PLAYERS_TOKEN[token],
-# 					"score": TEMP_RESULTS[token].score
-# 				} for token in TEMP_RESULTS
-# 			],
-# 			"number question": CURRENT_QUESTION,
-# 			"question": TEST.questions[CURRENT_QUESTION].title,
-# 			"answers": [
-# 				{
-# 					"player": PLAYERS_TOKEN[token],
-# 					"answer": SUMMARY[CURRENT_QUESTION][token][1],
-# 					"correct": SUMMARY[CURRENT_QUESTION][token][2]
-# 				} for token in SUMMARY[CURRENT_QUESTION]
-# 			],
-# 			"posible_answers": [
-# 				{
-# 					"answers": answer.title,
-# 					"correct": answer.isCorrect
-# 				} for answer in TEST.questions[CURRENT_QUESTION].answers
-# 			],
-# 			"instructions": "Enviar 'NEXT' para continuar con la siguiente pregunta o 'END' para finalizar la partida"
-
-# 		}
-# 		await ADMIN_CONNECTION.send_text(json.dumps(mensaje))
-# 		await broadcast()
-# 		return
-
-# 	elif MODE == "RANKING":
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"results": [
-# 				{
-# 					"player": PLAYERS_TOKEN[token],
-# 					"score": TEMP_RESULTS[token].score
-# 				} for token in TEMP_RESULTS
-# 			],
-# 			"instructions": "Enviar 'NEXT' para guardar los resultados, para no guardar mande 'END'"
-# 		}
-# 		await ADMIN_CONNECTION.send_text(json.dumps(mensaje))
-# 		await broadcast()
-# 		return
-
-# 	elif MODE == "END":
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"results": [
-# 				{
-# 					"player": PLAYERS_TOKEN[token],
-# 					"score": TEMP_RESULTS[token].score
-# 				} for token in TEMP_RESULTS
-# 			],
-# 			"instructions": "Enviar 'SAVE' para guardar los resultados, para no guardar mande 'CLOSE'"
-# 		}
-# 		await ADMIN_CONNECTION.send_text(json.dumps(mensaje))
-# 		await broadcast()
-# 		return
-
-# 	else:
-# 		raise WebSocketDisconnect("Modo no encontrado")
-
-# async def recibir_admin():
-# 	global MODE, CURRENT_QUESTION, TOTAL_RESPONSES, TIME, RESULTS_CALCULATED, TEMP_RESULTS, TAREA_TRANSMITIR
-
-
-# 	while True:
-# 		try:
-# 			data = await asyncio.wait_for(ADMIN_CONNECTION.receive_text(), timeout=1.0)
-# 		except asyncio.TimeoutError:
-# 			data = None
-
-# 		if data != None:
-# 			if MODE == "LOBBY":
-# 				if data == "CLOSE":
-# 					await close_all_connections()
-# 					await ADMIN_CONNECTION.close()
-# 					return
-
-# 				if data == "START" and len(PLAYERS_TOKEN) > 0:
-# 					CURRENT_QUESTION = 0
-# 					TOTAL_RESPONSES = 0
-# 					TIME = TEST.questions[CURRENT_QUESTION].allocatedTime
-# 					RESULTS_CALCULATED = False
-
-# 					await create_player(ADMIN_TOKEN)
-
-# 					for token, nombre in PLAYERS_TOKEN.items():
-# 						temp_player = session.query(Player).filter(Player.name == nombre).first()
-# 						if temp_player:
-# 							TEMP_RESULTS[token] = JSON_Result_Input(
-# 								player_id=temp_player.id,
-# 								score=0,
-# 								solutions=[]
-# 							)
-# 					MODE = "LOADING"
-
-# 					if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 						await TAREA_TRANSMITIR
-
-# 					TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-
-# 				elif data != None:
-# 					await ADMIN_CONNECTION.send_text(json.dumps({"error": "No hay jugadores suficientes o el comando es incorrecto"}))
-
-# 			elif MODE == "PLAYING":
-# 				if data == "SKIP":
-# 					TIME = 0
-
-# 				elif data != None:
-# 					await ADMIN_CONNECTION.send_text(json.dumps({"error": "Comando incorrecto"}))
-
-# 			elif MODE == "RESULTS" or MODE == "RANKING":
-# 				if data == "NEXT":
-# 					CURRENT_QUESTION += 1
-# 					TOTAL_RESPONSES = 0
-# 					if CURRENT_QUESTION >= TOTAL_QUESTIONS:
-# 						MODE = "END"
-# 					else:
-# 						TIME = TEST.questions[CURRENT_QUESTION].allocatedTime
-# 						RESULTS_CALCULATED = False
-# 						MODE = "LOADING"
-
-
-# 					if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 						await TAREA_TRANSMITIR
-
-# 					TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-
-# 				elif data == "END":
-# 					MODE = "END"
-
-# 					if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 						await TAREA_TRANSMITIR
-
-# 					TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-
-# 				elif data == "RANKING":
-# 					MODE = "RANKING"
-
-# 					if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 						await TAREA_TRANSMITIR
-
-# 					TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-
-# 				elif data == "RESULTS":
-# 					MODE = "RESULTS"
-
-# 					if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 						await TAREA_TRANSMITIR
-
-# 					TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-
-# 				elif data != None:
-# 					await ADMIN_CONNECTION.send_text(json.dumps({"error": "Comando incorrecto"}))
-
-# 			elif MODE == "END":
-# 				if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 						await TAREA_TRANSMITIR
-
-# 				TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-
-# 				if data == "SAVE":
-# 					await save_results()
-# 					await close_all_connections()
-# 					await ADMIN_CONNECTION.close()
-# 					return
-# 				elif data == "CLOSE":
-# 					await close_all_connections()
-# 					await ADMIN_CONNECTION.close()
-# 					return
-
-
-# async def save_results():
-
-# 	test = session.query(Assessment).filter(Assessment.id == TEST.id).first()
-# 	if not test:
-# 		await ADMIN_CONNECTION.send_text(json.dumps({"error": "Assessment no encontrado"}))
-# 		return
-
-# 	new_game = Game(
-# 		test_id=TEST.id,
-# 		playedAt=datetime.now()
-# 	)
-
-# 	session.add(new_game)
-# 	session.flush()
-
-# 	for token in TEMP_RESULTS:
-# 		player = session.query(Player).filter(Player.name == PLAYERS_TOKEN[token]).first()
-# 		if not player:
-# 			await ADMIN_CONNECTION.send_text(json.dumps({"error": "Jugador no encontrado"}))
-# 			return
-
-# 		new_result = Result(
-# 			player_id=player.id,
-# 			game_id=new_game.id,
-# 			score=TEMP_RESULTS[token].score
-# 		)
-# 		session.add(new_result)
-# 		session.flush()
-
-# 		for solution in TEMP_RESULTS[token].solutions:
-# 			new_solution = Solution(
-# 				result_id=new_result.id,
-# 				question_id=solution.question_id,
-# 				answer_id=solution.answer_id,
-# 				time=solution.time
+# 		assessmentInstance_data = JSON_AssessmentInstance_Output(
+# 			id=assessmentInstance.id,
+# 			title=assessmentInstance.title,
+# 			assessment_id=assessmentInstance.assessment_id,
+# 			users=None,
+# 			actual_user_id=assessmentInstance.actual_user_id,
+# 			active=assessmentInstance.active,
+# 			finished=assessmentInstance.finished,
+# 			answers=answers_data,
+# 			assessment=JSON_Assessment_Output(
+# 				id=assessment.id,
+# 				title=assessment.title,
+# 				image=assessment.image,
+# 				archived=assessment.archived,
+# 				questions=questions_data
 # 			)
-# 			session.add(new_solution)
+# 		)
 
-# 		session.commit()
-
-# 	await ADMIN_CONNECTION.send_text(json.dumps({"status": "Partida guardada correctamente"}))
-
-# 	PLAYERS_TOKEN.clear()
-# 	PLAYERS_CONNECTIONS.clear()
-
-
-# async def transmitir_jugadores(websocket: WebSocket, token: str):
-# 	if MODE == "LOBBY":
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"name": PLAYERS_TOKEN[token],
-# 			"token": token
-# 		}
-# 		await websocket.send_text(json.dumps(mensaje))
-
-# 	elif MODE == "LOADING":
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"countdown": COUNTDOWN,
-# 			"time": TIME
-# 		}
-# 		await websocket.send_text(json.dumps(mensaje))
-
-# 	elif MODE == "PLAYING":
-# 		Question = TEST.questions[CURRENT_QUESTION]
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"question": [
-# 				{
-# 					"question_id": Question.id,
-# 					"question_title": Question.title,
-# 					#"question_type": Question.questionType,
-# 					"question_answers": [
-# 						{
-# 							"answers_id": answer.id,
-# 							"answers_title": answer.title,
-# 						} for answer in Question.answers
-# 						]
-# 				}
-# 			],
-# 			"question_time": TIME
-# 		}
-# 		await websocket.send_text(json.dumps(mensaje))
-
-# 	elif MODE == "RESULTS" or MODE == "RANKING":
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"score": TEMP_RESULTS[token].score,
-# 			"question": SUMMARY[CURRENT_QUESTION][token][0],
-# 			"answer": SUMMARY[CURRENT_QUESTION][token][1],
-# 			"correct": SUMMARY[CURRENT_QUESTION][token][2]
-# 		}
-
-# 		await websocket.send_text(json.dumps(mensaje))
-
-# 	elif MODE == "END":
-# 		mensaje = {
-# 			"mode": MODE,
-# 			"score": TEMP_RESULTS[token].score
-# 		}
-# 		await websocket.send_text(json.dumps(mensaje))
-
-# 	else:
-# 		raise WebSocketDisconnect("Modo no encontrado")
-
-
-# lock = asyncio.Lock()
-
-# async def recibir_jugadores(websocket: WebSocket, token: str):
-# 	global TEMP_RESULTS, TOTAL_RESPONSES, MODE, TIME
-
-# 	while True:
-# 		try:
-# 			data = await websocket.receive_text()
-
-# 			if MODE == "PLAYING":
-# 				data_dict = json.loads(data)
-
-# 				solution_input = JSON_Solution_Input(
-# 					question_id=data_dict["question_id"],
-# 					answer_id=data_dict["answer_id"],
-# 					time=TIME
-# 				)
-
-# 				async with lock:
-# 					if token in TEMP_RESULTS:
-# 						TEMP_RESULTS[token].solutions.append(solution_input)
-# 						TOTAL_RESPONSES += 1
-
-# 						if TOTAL_RESPONSES >= len(PLAYERS_TOKEN):
-# 							TIME = 0
-# 					else:
-# 						print(f"Token {token} no encontrado en TEMP_RESULTS.")
-# 						await websocket.send_text(json.dumps({"error": "Token no encontrado"}))
-
-# 		except WebSocketDisconnect:
-# 			print(f"WebSocket desconectado para el token {token}.")
-
-# 		await asyncio.sleep(1)
-
-# @app.websocket("/play/pin={playerPIN}/player={player}")
-# async def player_websocket(websocket: WebSocket, playerPIN: int, player: str):
-# 	global PLAYERS_TOKEN, PLAYERS_CONNECTIONS, TEMP_RESULTS, SUMMARY, TAREA_TRANSMITIR, MODE
-# 	await websocket.accept()
-
-# 	if ADMIN_CONNECTION is None or MODE != "LOBBY":
-# 		await websocket.send_text(json.dumps({"error": "No hay partida disponible"}))
-# 		await websocket.close()
-# 		return
-
-# 	try:
-
-# 		if player in PLAYERS_TOKEN.values():
-# 			await websocket.send_text(json.dumps({"error": "Nombre de jugador ya en uso"}))
-# 			await websocket.close()
-# 			return
-# 		else:
-# 			token = await generate_short_token()
-# 			PLAYERS_TOKEN[token] = player
-
-# 		if not token:
-# 			await websocket.send_text(json.dumps({"error": "Fallo de sesión"}))
-# 			await websocket.close()
-# 			return
-
-# 		if PIN != playerPIN:
-# 			await websocket.send_text(json.dumps({"error": "PIN incorrecto"}))
-# 			await websocket.close()
-# 			return
-
-# 		if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 			await TAREA_TRANSMITIR
-
-# 		TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-
-# 		await transmitir_jugadores(websocket, token)
-# 		PLAYERS_CONNECTIONS[token] = websocket
-# 		receive_task = asyncio.create_task(recibir_jugadores(websocket, token))
-# 		await receive_task
-
-# 	except (Exception, WebSocketDisconnect) as e:
-# 		if websocket.client_state != WebSocketState.DISCONNECTED:
-# 			await websocket.send_text(json.dumps({"error": f"Error: {str(e)}"}))
-
+# 		return assessmentInstance_data
+# 	except HTTPException as e:
+# 		raise e
+# 	except Exception as e:
+# 		raise HTTPException(status_code=500, detail=f"Error al obtener respuestas: {str(e)}")
 # 	finally:
-# 		if MODE != "END":
-# 			del PLAYERS_TOKEN[token]
-# 			del PLAYERS_CONNECTIONS[token]
-# 			if MODE == "LOBBY":
-# 				if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 					await TAREA_TRANSMITIR
-
-# 				TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
-
-# 			elif len(PLAYERS_CONNECTIONS) == 0:
-# 				MODE = "END"
-
-# 				if TAREA_TRANSMITIR is not None and not TAREA_TRANSMITIR.done():
-# 					await TAREA_TRANSMITIR
-
-# 				TAREA_TRANSMITIR = asyncio.create_task(transmitir_admin())
+# 		session.close()

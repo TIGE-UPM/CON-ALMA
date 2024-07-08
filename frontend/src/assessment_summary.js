@@ -1,25 +1,25 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 
-function TestResults() {
-	const [testResults, setTestResults] = useState([]);
-	const [testName, setTestName] = useState("");
+function AssessmentInstances() {
+	const [assessmentInstances, setAssessmentInstances] = useState([]);
+	const [assessmentName, setAssessmentName] = useState("");
 	const navigate = useNavigate();
-	const { id } = useParams(); // id del test
+	const { id } = useParams(); // id del assessment
 	const token = localStorage.getItem("token");
 
 	useEffect(() => {
-		fetchTestResults();
+		fetchAssessmentInstances();
 	}, [id, token]);
 
-	const fetchTestResults = async () => {
+	const fetchAssessmentInstances = async () => {
 		try {
 			const response = await fetch(
-				`http://localhost:8000/results/test/${id}/all/token=${token}`
+				`http://localhost:8000/assessment/${id}/assessment-instance/all/token=${token}`
 			);
 			if (!response.ok) {
 				if (response.status === 404) {
-					setTestResults([]);
+					setAssessmentInstances([]);
 				} else {
 					// Si el estado de la respuesta no es OK, arrojar un error con el código de estado
 					throw new Error(
@@ -28,8 +28,8 @@ function TestResults() {
 				}
 			} else {
 				const data = await response.json();
-				setTestName(data.title || "Test");
-				setTestResults(data.games || []);
+				setAssessmentName(data.title || "Assessment");
+				setAssessmentInstances(data.assessmentInstances || []);
 			}
 		} catch (error) {
 			console.error("Fetch error:", error);
@@ -38,11 +38,11 @@ function TestResults() {
 		}
 	};
 
-	const handleDelete = async (gameId) => {
+	const handleDelete = async (instanceId) => {
 		if (window.confirm("¿Estás seguro de querer eliminar este juego?")) {
 			try {
 				const response = await fetch(
-					`http://localhost:8000/results/${gameId}/delete/token=${token}`,
+					`http://localhost:8000/assessment-instance/${assessmentInstanceId}/delete/token=${token}`,
 					{
 						method: "DELETE",
 					}
@@ -54,7 +54,7 @@ function TestResults() {
 					);
 				}
 				alert("Juego eliminado con éxito");
-				fetchTestResults();
+				fetchAssessmentInstances();
 			} catch (error) {
 				console.error("Fetch error:", error);
 				// Redireccionar a la página de error sin pasar el código de estado como parámetro
@@ -63,8 +63,12 @@ function TestResults() {
 		}
 	};
 
-	const handleMoreClick = (gameId, testid) => {
-		navigate(`/menu/test/${testid}/game/${gameId}`);
+	const handleMoreClick = (instanceId) => {
+		navigate(`/menu/assessment-instance/${instanceId}`);
+	};
+
+	const handleCreateClick = () => {
+		navigate(`/menu/assessment/${id}/instance/new`);
 	};
 
 	const handgleReturn = () => {
@@ -85,10 +89,10 @@ function TestResults() {
 				<div className="navbar-nav">
 					<a
 						href="#"
-						onClick={() => navigate("/menu/test")}
+						onClick={() => navigate("/menu/assessment")}
 						className="nav-link"
 					>
-						Test
+						Assessment
 					</a>
 					<a
 						href="#"
@@ -116,43 +120,62 @@ function TestResults() {
 					>
 						Volver
 					</button>
+					<button
+						className="btn btn-success mb-3"
+						onClick={handleCreateClick}
+					>
+						Crear nuevo juego
+					</button>
 				</aside>
 
 				<section className="col-md-10">
-					{testResults.length === 0 ? (
+					<h1>Evaluación: {assessmentName}</h1>
+					{assessmentInstances.length === 0 ? (
 						<h2>No hay juegos</h2>
 					) : (
-						<h2>Resultados de: {testName}</h2>
+						<h2>Juegos: </h2>
 					)}
-					{testResults.map((game) => (
-						<div key={game.id} className="col-md-4 mb-3">
+					{assessmentInstances.map((instance) => (
+						<div key={instance.id} className="col-md-4 mb-3">
 							<div className="card h-100">
 								<div className="card-body d-flex flex-column">
-									<h5 className="card-title">
+									{/* <h5 className="card-title">
 										Jugado:{" "}
 										{new Date(
-											game.playedAt
+											instance.playedAt
 										).toLocaleDateString()}
-									</h5>
+									</h5> */}
+									<h4 className="card-title">
+										{instance.title}
+									</h4>
+									<h6 className="card-title">
+										Activo: {instance.active ? "Sí" : "No"}
+									</h6>
+									<h6 className="card-title">
+										Finalizado: {instance.finished ? "Sí" : "No"}
+									</h6>
 									<p className="card-text">
-										Número de jugadores: {game.players}
+										{instance.users.length ? (
+											`Número de usuarios: ${instance.users.length}`
+										) : (
+											"No hay usuarios creados"
+										)}
 									</p>
 									<div className="mt-auto d-flex justify-content-between">
 										<button
 											className="btn btn-primary"
 											onClick={() =>
 												handleMoreClick(
-													game.id,
-													game.test_id
+													instance.id
 												)
 											}
 										>
-											Más
+											Ver
 										</button>
 										<button
 											className="btn btn-danger"
 											onClick={() =>
-												handleDelete(game.id)
+												handleDelete(instance.id)
 											}
 										>
 											Borrar
@@ -168,4 +191,4 @@ function TestResults() {
 	);
 }
 
-export default TestResults;
+export default AssessmentInstances;

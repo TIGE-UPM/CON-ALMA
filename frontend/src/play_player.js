@@ -7,20 +7,21 @@ import ResultsScreen from "./player_game/results";
 import EndScreen from "./player_game/end";
 
 function GameScreen() {
-	const { pin } = useParams();
-	const { name } = useParams();
 	const navigate = useNavigate();
+	const token = localStorage.getItem("token");
 	const [gameState, setGameState] = useState(null);
 	const [ws, setWs] = useState(null);
 
 	useEffect(() => {
-		const wsUrl = `ws://${process.env.REACT_APP_IP}:8000/play/pin=${pin}/player=${name}`;
+		const wsUrl = `ws://localhost:8000/play/token=${token}`;
+		// const wsUrl = `ws://${process.env.REACT_APP_IP}:8000/play/token=${token}`;
 		console.log(wsUrl);
 
 		const newWs = new WebSocket(wsUrl);
 
 		newWs.onmessage = (event) => {
 			const data = JSON.parse(event.data);
+			console.log(data);
 			setGameState(data);
 		};
 
@@ -29,7 +30,7 @@ function GameScreen() {
 		return () => {
 			if (newWs) newWs.close();
 		};
-	}, [pin, name]);
+	}, []);
 
 	if (!gameState) return <div>Cargando...</div>;
 

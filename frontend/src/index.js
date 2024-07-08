@@ -11,11 +11,12 @@ import EditAssessment from "./assessment_edit";
 import CreateAssessment from "./assessment_create";
 import PlayerSummary from "./player_summary";
 import AssessmentSummary from "./assessment_summary";
-import TestGameDetails from "./game_by_test";
+import CreateAssessmentInstance from "./assessmentInstance_create";
+import AssessmentInstanceDetails from "./assessmentInstance_view";
 import PlayerGameDetails from "./game_by_player";
 import Initial from "./initial";
 import ErrorPage from "./error";
-import PlayAdmin from "./play_admin";
+import GameAdmin from "./game_admin";
 import PlayPlayer from "./play_player";
 import "bootstrap/dist/css/bootstrap.min.css";
 
@@ -31,19 +32,20 @@ root.render(
 				<Route path="/menu/assessment/:id" element={<DetalleAssessment />} />
 				<Route path="/menu/assessment/:id/edit" element={<EditAssessment />} />
 				<Route path="/menu/assessment/new" element={<CreateAssessment />} />
+				<Route path="/menu/assessment/:id/instance/new" element={<CreateAssessmentInstance />} />
 				<Route path="/menu/player/:id" element={<PlayerSummary />} />
-				<Route path="/menu/assessment/:id/games" element={<AssessmentSummary />} />
+				<Route path="/menu/assessment/:id/instances" element={<AssessmentSummary />} />
 				<Route
-					path="/menu/assessment/:assessmentid/game/:gameid"
-					element={<TestGameDetails />}
+					path="/menu/assessment-instance/:assessmentInstanceId"
+					element={<AssessmentInstanceDetails />}
 				/>
 				<Route
 					path="/menu/player/:id_player/game/:id_game"
 					element={<PlayerGameDetails />}
 				/>
 				<Route path="/error" element={<ErrorPage />} />
-				<Route path="/play/:assessmentId/admin" element={<PlayAdmin />} />
-				<Route path="/game/:pin/:name" element={<PlayPlayer />} />
+				<Route path="/start/:assessmentInstanceId" element={<GameAdmin />} />
+				<Route path="/game" element={<PlayPlayer />} />
 				{/* Puedes agregar más rutas según sea necesario */}
 			</Routes>
 		</BrowserRouter>

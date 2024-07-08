@@ -69,7 +69,7 @@ function DetalleAssessment() {
 	};
 
 	const handleViewGames = () => {
-		navigate(`/menu/assessment/${id}/games`);
+		navigate(`/menu/assessment/${id}/instances`);
 	};
 
 	const handleArchive = async () => {
@@ -119,11 +119,15 @@ function DetalleAssessment() {
 		}
 	};
 
-	const handlePlay = async () => {
-		navigate(`/play/${id}/admin`);
+	// const handlePlay = async () => {
+	// 	navigate(`/play/${id}/admin`);
+	// };
+
+	const handleCreateAssessmentInstance = async () => {
+		navigate(`/menu/assessment/${id}/instance/new`);
 	};
 
-	const handgleReturn = () => {
+	const handleReturn = () => {
 		navigate("/menu/assessment");
 	};
 
@@ -168,9 +172,9 @@ function DetalleAssessment() {
 				<aside className="col-md-2 d-flex flex-column">
 					<button
 						className="btn btn-success mb-3"
-						onClick={handlePlay}
+						onClick={handleCreateAssessmentInstance}
 					>
-						Jugar
+						Crear Juego
 					</button>
 					<button
 						className="btn btn-primary mb-3"
@@ -208,7 +212,7 @@ function DetalleAssessment() {
 					</button>
 					<button
 						className="btn btn-secondary mb-3"
-						onClick={handgleReturn}
+						onClick={handleReturn}
 					>
 						Volver
 					</button>
@@ -307,7 +311,9 @@ function DetalleAssessment() {
 														</span>
 													)}
 												</p>
-												{question.questionType === "select" && (
+												{question.questionType === "select" ? (
+													<>
+													<strong>Opciones:</strong>
 													<ul>
 														{question.selectOptions.map(
 															(selectOption) => (
@@ -319,7 +325,8 @@ function DetalleAssessment() {
 															)
 														)}
 													</ul>
-												)}
+													</>
+												) : null}
 											</div>
 										</div>
 									</div>

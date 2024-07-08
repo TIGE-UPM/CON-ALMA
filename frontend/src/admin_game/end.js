@@ -1,15 +1,15 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
-function EndScreen({ data, ws, testid }) {
+function EndScreen({ data, ws, assessmentid }) {
 	const handleSave = () => {
 		ws.send("SAVE");
-		navigate(`/menu/test/${testid}`);
+		navigate(`/menu/assessment/${assessmentid}`);
 	};
 
 	const handleClose = () => {
 		ws.send("CLOSE");
-		navigate(`/menu/test/${testid}`);
+		navigate(`/menu/assessment/${assessmentid}`);
 	};
 
 	const navigate = useNavigate();

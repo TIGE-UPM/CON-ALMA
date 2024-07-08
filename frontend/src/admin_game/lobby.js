@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-function LobbyScreen({ data, ws, testid }) {
+function LobbyScreen({ data, ws, connectedUsers }) {
 	const navigate = useNavigate();
 	const [qrImageUrl, setQrImageUrl] = useState("");
 
@@ -20,7 +20,7 @@ function LobbyScreen({ data, ws, testid }) {
 
 	const handleBack = () => {
 		ws.send("CLOSE");
-		navigate(`/menu/test`);
+		navigate(-1);
 	};
 	const testImageUrl = data.image;
 
@@ -47,7 +47,6 @@ function LobbyScreen({ data, ws, testid }) {
 						{/* Clase text-start para alinear el texto a la izquierda */}
 						<h1 className="card-title">{data.test}</h1>
 						<div className="d-flex justify-content-between align-items-center mb-2">
-							<h3>PIN: {data.PIN}</h3>
 							<button
 								onClick={handleStart}
 								className="btn btn-primary"
@@ -66,25 +65,24 @@ function LobbyScreen({ data, ws, testid }) {
 							<img src={qrImageUrl} alt="QR Code" />
 						</p>
 						<p className="card-text">
-							Jugadores Conectados: {data.players.length}
+							Jugadores Conectados: {connectedUsers.length}
 						</p>
+						<div className="mt-3">
+							<div className="row justify-content-center">
+								{connectedUsers.map((user, index) => (
+									<div key={index} className="col-auto mb-2">
+										<div className="p-3 border bg-white rounded">
+											{user.name}
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>
 
 			{/* Área de jugadores */}
-			<div className="container mt-3">
-				<div className="row justify-content-center">
-					{data.players.map((player, index) => (
-						<div key={index} className="col-auto mb-2">
-							{/* Tarjetas de jugadores con esquinas redondeadas */}
-							<div className="p-3 border bg-white rounded">
-								{player}
-							</div>
-						</div>
-					))}
-				</div>
-			</div>
 		</div>
 	);
 }

@@ -8,19 +8,26 @@ import EndScreen from "./admin_game/end";
 import RankingScreen from "./admin_game/ranking";
 
 function GameScreen() {
-	const { testId } = useParams();
+	const { assessmentInstanceId } = useParams();
 	const navigate = useNavigate();
 	const [gameState, setGameState] = useState(null);
+	const [connectedUsers, setConnectedUsers] = useState([]);
 	const [ws, setWs] = useState(null);
 
 	useEffect(() => {
 		const token = localStorage.getItem("token");
 		const newWs = new WebSocket(
-			`ws://localhost:8000/play/test=${testId}/token=${token}`
+			`ws://localhost:8000/assessment-instance/${assessmentInstanceId}/start/token=${token}`
 		);
 
 		newWs.onmessage = (event) => {
 			const data = JSON.parse(event.data);
+			if (data.event === "CONNECT") {
+				// append user to connectedUsers
+				setConnectedUsers((prev) => [...prev, {id: data.user_id, name: data.name}]);
+			}
+
+			console.log(data);
 			setGameState(data);
 		};
 
@@ -29,18 +36,18 @@ function GameScreen() {
 		return () => {
 			if (newWs) newWs.close();
 		};
-	}, [testId]);
+	}, [assessmentInstanceId]);
 
 	if (!gameState) return <div>Cargando...</div>;
 	switch (gameState.mode) {
 		case "LOBBY":
-			return <LobbyScreen data={gameState} ws={ws} />;
-		case "LOADING":
-			return <LoadingScreen data={gameState} />;
+			return <LobbyScreen data={gameState} ws={ws} connectedUsers={connectedUsers}/>;
+		// case "LOADING":
+		// 	return <LoadingScreen data={gameState} />;
 		case "PLAYING":
-			return <PlayingScreen data={gameState} ws={ws} />;
-		case "RESULTS":
-			return <ResultsScreen data={gameState} ws={ws} />;
+			return <PlayingScreen data={gameState} ws={ws} connectedUsers={connectedUsers}/>;
+		// case "RESULTS":
+		// 	return <ResultsScreen data={gameState} ws={ws} />;
 		case "END":
 			return <EndScreen data={gameState} ws={ws} testid={testId} />;
 		case "RANKING":
