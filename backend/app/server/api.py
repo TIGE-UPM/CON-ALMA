@@ -697,6 +697,7 @@ async def get_active_assessment_instance(token: str):
 				)
 			)
 			if not user.voteEveryone and user.group != actual_user.group:
+				assessment_data = None
 				actual_user_data = None
 
 		response = JSON_AssessmentInstance_Output(
@@ -888,16 +889,19 @@ async def start_assessment_instance(websocket: WebSocket,id: int, token: str):
 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.id == id).first()
 		if not assessmentInstance:
 			raise WebSocketException(code=1003, reason="Evaluación no encontrada")
-
+		if assessmentInstance.active is True:
+			raise WebSocketException(code=1003, reason="Evaluación ya está activa")
+		if assessmentInstance.finished is True:
+			raise WebSocketException(code=1003, reason="Evaluación ya está finalizada")
+		active_assessment_instance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
+		if active_assessment_instance:
+			raise WebSocketException(code=1003, reason="Ya hay una evaluación activa")
 		assessmentInstance.active = True
 		users = session.query(User).filter(User.assessment_instance_id == id).all()
 		sorted_users = sorted(users, key=lambda user: user.order)
 		filtered_users = [user for user in sorted_users if user.order != -1]
 		assessmentInstance.actual_user_id = filtered_users[0].id
 		session.commit()
-
-		# TODO send refresh of assessment via websocket
-		# pdb.set_trace()
 		info = {
 			"mode": "LOBBY",
 			"assessment_instance_id": id,
@@ -906,7 +910,6 @@ async def start_assessment_instance(websocket: WebSocket,id: int, token: str):
 		}
 		info_json = json.dumps(info)
 		await manager.send_personal_message(info_json, websocket=websocket)
-		# pdb.set_trace()
 		try:
 			while True:
 				message = await manager.receive_text(websocket)
@@ -929,7 +932,6 @@ async def start_assessment_instance(websocket: WebSocket,id: int, token: str):
 					info_json = json.dumps(info)
 					await manager.broadcast_admin(info_json)
 					await manager.broadcast_users(info_json)
-					# break
 		except WebSocketDisconnect:
 			manager.disconnect(websocket, is_admin=True)
 	except HTTPException as e:
@@ -944,6 +946,7 @@ async def start_assessment_instance(websocket: WebSocket,id: int, token: str):
 async def next_user_assessment_instance(token: str):
 	await check_is_admin(token)
 	try:
+		# pdb.set_trace()
 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
 		if not assessmentInstance:
 			raise HTTPException(status_code=404, detail="No hay evaluación activa")
@@ -951,8 +954,15 @@ async def next_user_assessment_instance(token: str):
 		current_user = session.query(User).filter(User.id == assessmentInstance.actual_user_id).first()
 		if not current_user:
 			raise HTTPException(status_code=404, detail="No hay usuario actual")
-
-		next_user = session.query(User).filter(User.assessment_instance_id == assessmentInstance.id, User.order > current_user.order).order_by(User.order).first()
+		print('current user', current_user.order)
+		assessment_users = session.query(User).filter(User.assessment_instance_id == assessmentInstance.id).all()
+		assessment_users = sorted(assessment_users, key=lambda user: user.order)
+		assessment_users = filter(lambda user: user.order != -1, assessment_users)
+		next_user = None
+		for user in assessment_users:
+			if user.order > current_user.order:
+				next_user = user
+				break
 		if not next_user:
 			assessmentInstance.actual_user_id = None
 			assessmentInstance.active = False
@@ -966,22 +976,22 @@ async def next_user_assessment_instance(token: str):
 			await manager.broadcast_admin(info_json)
 			await manager.broadcast_users(info_json)
 			return {"detail": "Fin de la evaluación"}
-
-		assessmentInstance.actual_user_id = next_user.id
-		session.commit()
-		info = {
-			"mode": "LOBBY",
-			"event": "REFRESH",
-		}
-		info_json = json.dumps(info)
-		await manager.broadcast_admin(info_json)
-		await manager.broadcast_users(info_json)
-		# TODO send refresh of assessment via websocket
+		else:
+			assessmentInstance.actual_user_id = next_user.id
+			session.commit()
+			info = {
+				"mode": "LOBBY",
+				"event": "REFRESH",
+			}
+			info_json = json.dumps(info)
+			await manager.broadcast_admin(info_json)
+			await manager.broadcast_users(info_json)
 		return {"detail": "Siguiente usuario"}
 	except HTTPException as e:
 		raise e
 	except Exception as e:
 		session.rollback()
+		print(e)
 		raise HTTPException(status_code=500, detail=f"Error al pasar al siguiente usuario: {str(e)}")
 	finally:
 		session.close()
@@ -1025,7 +1035,6 @@ async def play(websocket: WebSocket, token: str):
 			if message == "CLOSE":
 				await manager.disconnect(websocket)
 				break
-			# if message == "NEXT":
 	except HTTPException as e:
 		raise e
 	except Exception as e:
@@ -1035,8 +1044,8 @@ async def play(websocket: WebSocket, token: str):
 
 @app.post("/user/answer/token={token}")
 async def add_user_answer(token: str, input_data: JSON_User_Answer_Inputs):
-	user_id = await get_token_user_id(token)
 	try:
+		user_id = await get_token_user_id(token)
 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
 		if not assessmentInstance:
 			raise HTTPException(status_code=404, detail="No hay evaluación activa")
@@ -1044,8 +1053,10 @@ async def add_user_answer(token: str, input_data: JSON_User_Answer_Inputs):
 		if not user:
 			raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-		# pdb.set_trace()
 		for answer_data in input_data.answers:
+			print(answer_data)
+			print(answer_data.question_id)
+			print(answer_data.answerText)
 			new_answer = Answer(
 				assessment_instance_id=assessmentInstance.id,
 				question_id=answer_data.question_id,
@@ -1055,6 +1066,7 @@ async def add_user_answer(token: str, input_data: JSON_User_Answer_Inputs):
 				date=datetime.now()
 			)
 			session.add(new_answer)
+			session.flush()
 
 		session.commit()
 		info = {
@@ -1068,6 +1080,7 @@ async def add_user_answer(token: str, input_data: JSON_User_Answer_Inputs):
 		raise e
 	except Exception as e:
 		session.rollback()
+		print(e)
 		raise HTTPException(status_code=500, detail=f"Error al guardar respuestas: {str(e)}")
 	finally:
 		session.close()
