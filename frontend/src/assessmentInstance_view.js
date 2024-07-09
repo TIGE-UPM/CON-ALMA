@@ -81,7 +81,7 @@ function DetalleAssessmentInstance() {
 					);
 				}
 				alert("AssessmentInstance eliminado con éxito");
-				navigate("/menu/assessmentInstance");
+				navigate(-1);
 			} catch (error) {
 				console.error("Fetch error:", error);
 				// Redireccionar a la página de error sin pasar el código de estado como parámetro
@@ -176,6 +176,7 @@ function DetalleAssessmentInstance() {
 					<button
 						className="btn btn-success mb-3"
 						onClick={handleStart}
+						disabled={assessmentInstance && (assessmentInstance.active || assessmentInstance.finished || !assessmentInstance.users.length)}
 					>
 						Comenzar evaluación
 					</button>

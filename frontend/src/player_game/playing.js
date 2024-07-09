@@ -2,12 +2,12 @@ import React, { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 function PlayingScreen({ data, ws }) {
+	const token = localStorage.getItem("token");
 	const [assessmentInstance, setAssessmentInstance] = useState(null);
 	const [answers, setAnswers] = useState([]);
 	const navigate = useNavigate();
 	const [gameState, setGameState] = useState(data);
 	const [isSubmitted, setIsSubmitted] = useState(false);
-	const token = localStorage.getItem("token");
 	const colors = ["#FF7043", "#FFCA28", "#29B6F6", "#66BB6A"];
 
 	const handleAnswerChange = (questionId, value) => {
@@ -21,7 +21,7 @@ function PlayingScreen({ data, ws }) {
 	const submitForm = async () => {
 		try {
 			const body = {
-				answers: answers,
+				answers,
 			}
 			const response = await fetch(
 				`http://localhost:8000/user/answer/token=${token}`,
@@ -59,14 +59,17 @@ function PlayingScreen({ data, ws }) {
 				);
 			}
 			const data = await response.json();
+			console.log(data);
 			setAssessmentInstance(data);
-			const initialAnswers = data.assessment.questions.map((question) => ({
-				question_id: question.id,
-				answerText: "",
-			}));
+			let initialAnswers = [];
+			if (data.assessment) {
+				initialAnswers = data.assessment.questions.map((question) => ({
+					question_id: question.id,
+					answerText: "",
+				}));
+			}
 			setAnswers(initialAnswers);
 			setIsSubmitted(false);
-			console.log(data);
 			if (data.answers && data.answers.length > 0) {
 				setAnswers(data.answers);
 				setIsSubmitted(true);
@@ -94,18 +97,29 @@ function PlayingScreen({ data, ws }) {
 		}
 		if (data.event === "FINISH") {
 			ws.send("CLOSE");
+			navigate("/");
 		}
 		setGameState(data);
 
 		console.log(data);
 	};
 
-	if (!assessmentInstance) return <div>Cargando...</div>;
-	if (!assessmentInstance.assessment) return <div>Espera, no te toca evaluar todavia...</div>;
+	if (!assessmentInstance) {
+		return (
+			<div className="text-center">
+				<h2 style={{ marginTop: "30px", marginBottom: "10px" }}>Cargando...</h2>
+			</div>
+	)};
+	if (!assessmentInstance?.assessment) {
+		return (
+		<div className="text-center">
+			<h2 style={{ marginTop: "30px", marginBottom: "10px" }}>Espera, no te toca evaluar todavia...</h2>
+		</div>
+	)};
 	return (
 		<form onSubmit={handleSubmit}>
 			<section className="col-md-10">
-				{assessmentInstance.assessment && (
+				{assessmentInstance?.assessment && (
 					<div className="card">
 						<img
 							src={assessmentInstance.assessment.image}
@@ -219,50 +233,6 @@ function PlayingScreen({ data, ws }) {
 				)}
 			</section>
 		</form>
-		// <form onSubmit={handleSubmit}>
-		// 	<h1>{assessmentInstance.title}</h1>
-		// 	<h2>Estás evaluando a {assessmentInstance.actual_user.name}</h2>
-		// 	{assessmentInstance.assessment.questions.map((question) => {
-		// 		const answer = assessmentInstance.answers ? assessmentInstance.answers.find(a => a.question_id === question.id) : null;
-		// 		const initialValue = answer ? answer.answerText : '';
-
-		// 		switch (question.questionType) {
-		// 			case 'text':
-		// 			case 'number':
-		// 				return (
-		// 					<div key={question.id}>
-		// 					{/* <label>{question.title}</label> */}
-		// 					<input
-		// 						type={question.questionType === 'numeric' ? 'number' : 'text'}
-		// 						value={answers[question.id] || initialValue}
-		// 						onChange={(e) => handleChange(question.id, e.target.value)}
-		// 						disabled={isSubmitted}
-		// 					/>
-		// 					</div>
-		// 				);
-		// 			case 'select':
-		// 				return (
-		// 					<div key={question.id}>
-		// 					<label>{question.title}</label>
-		// 					{question.selectOptions.map((option) => (
-		// 						<div key={option}>
-		// 						<input
-		// 							type="checkbox"
-		// 							checked={answers[question.id] ===option || initialValue.includes(option)}
-		// 							onChange={(e) => handleChange(question.id, e.target.checked ? option : '')}
-		// 							disabled={isSubmitted}
-		// 						/>
-		// 						<label>{option}</label>
-		// 						</div>
-		// 					))}
-		// 					</div>
-		// 				);
-		// 			default:
-		// 				return null;
-		// 		}
-		// 	})}
-		// 	<button type="submit" disabled={isSubmitted}>Enviar Respuestas</button>
-		// </form>
 	);
 }
 

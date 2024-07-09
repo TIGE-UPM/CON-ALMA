@@ -45,7 +45,7 @@ function GameScreen() {
 		// case "LOADING":
 		// 	return <LoadingScreen data={gameState} />;
 		case "PLAYING":
-			return <PlayingScreen data={gameState} ws={ws} connectedUsers={connectedUsers}/>;
+			return <PlayingScreen data={gameState} ws={ws} connectedUsers={connectedUsers} assessmentInstanceId={assessmentInstanceId}/>;
 		// case "RESULTS":
 		// 	return <ResultsScreen data={gameState} ws={ws} />;
 		case "END":

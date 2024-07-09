@@ -42,7 +42,7 @@ function AssessmentInstances() {
 		if (window.confirm("¿Estás seguro de querer eliminar este juego?")) {
 			try {
 				const response = await fetch(
-					`http://localhost:8000/assessment-instance/${assessmentInstanceId}/delete/token=${token}`,
+					`http://localhost:8000/assessment-instance/${instanceId}/delete/token=${token}`,
 					{
 						method: "DELETE",
 					}
@@ -135,56 +135,58 @@ function AssessmentInstances() {
 					) : (
 						<h2>Juegos: </h2>
 					)}
-					{assessmentInstances.map((instance) => (
-						<div key={instance.id} className="col-md-4 mb-3">
-							<div className="card h-100">
-								<div className="card-body d-flex flex-column">
-									{/* <h5 className="card-title">
-										Jugado:{" "}
-										{new Date(
-											instance.playedAt
-										).toLocaleDateString()}
-									</h5> */}
-									<h4 className="card-title">
-										{instance.title}
-									</h4>
-									<h6 className="card-title">
-										Activo: {instance.active ? "Sí" : "No"}
-									</h6>
-									<h6 className="card-title">
-										Finalizado: {instance.finished ? "Sí" : "No"}
-									</h6>
-									<p className="card-text">
-										{instance.users.length ? (
-											`Número de usuarios: ${instance.users.length}`
-										) : (
-											"No hay usuarios creados"
-										)}
-									</p>
-									<div className="mt-auto d-flex justify-content-between">
-										<button
-											className="btn btn-primary"
-											onClick={() =>
-												handleMoreClick(
-													instance.id
-												)
-											}
-										>
-											Ver
-										</button>
-										<button
-											className="btn btn-danger"
-											onClick={() =>
-												handleDelete(instance.id)
-											}
-										>
-											Borrar
-										</button>
+					<div className="row">
+						{assessmentInstances.map((instance) => (
+							<div key={instance.id} className="col-md-4 mb-3">
+								<div className="card h-100">
+									<div className="card-body d-flex flex-column">
+										{/* <h5 className="card-title">
+											Jugado:{" "}
+											{new Date(
+												instance.playedAt
+											).toLocaleDateString()}
+										</h5> */}
+										<h4 className="card-title">
+											{instance.title}
+										</h4>
+										<h6 className="card-title">
+											Activo: {instance.active ? "Sí" : "No"}
+										</h6>
+										<h6 className="card-title">
+											Finalizado: {instance.finished ? "Sí" : "No"}
+										</h6>
+										<p className="card-text">
+											{instance.users.length ? (
+												`Número de usuarios: ${instance.users.length}`
+											) : (
+												"No hay usuarios creados"
+											)}
+										</p>
+										<div className="mt-auto d-flex justify-content-between">
+											<button
+												className="btn btn-primary"
+												onClick={() =>
+													handleMoreClick(
+														instance.id
+													)
+												}
+											>
+												Ver
+											</button>
+											<button
+												className="btn btn-danger"
+												onClick={() =>
+													handleDelete(instance.id)
+												}
+											>
+												Borrar
+											</button>
+										</div>
 									</div>
 								</div>
 							</div>
-						</div>
-					))}
+						))}
+					</div>
 				</section>
 			</div>
 		</div>

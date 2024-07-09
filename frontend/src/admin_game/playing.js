@@ -1,7 +1,7 @@
 import React, {useState, useCallback, useEffect} from "react";
 import { useNavigate } from "react-router-dom";
 
-function PlayingScreen({ data, ws, connectedUsers }) {
+function PlayingScreen({ data, ws, connectedUsers, assessmentInstanceId }) {
 	// Colores para las tarjetas
 	const colors = ["#FF7043", "#FFCA28", "#29B6F6", "#66BB6A"];
 	const navigate = useNavigate();
@@ -75,6 +75,10 @@ function PlayingScreen({ data, ws, connectedUsers }) {
 			const user = currentGradingUsers.find((user) => user.id === data.user_id);
 			user.voted = true;
 			setCurrentGradingUsers([...currentGradingUsers]);
+		}
+		if(data.event === "FINISH") {
+			ws.send("CLOSE");
+			navigate(`/menu/assessment-instance/${assessmentInstanceId}`);
 		}
 		setGameState(data);
 
