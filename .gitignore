@@ -49,5 +49,5 @@ Thumbs.db
 *.wmv
 
 .env
-/backend/venv/*
-/venv/*
+venv/
+.vscode
