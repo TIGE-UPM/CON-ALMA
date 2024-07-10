@@ -13,9 +13,10 @@ function GameScreen() {
 	const [gameState, setGameState] = useState(null);
 	const [connectedUsers, setConnectedUsers] = useState([]);
 	const [ws, setWs] = useState(null);
+	const token = localStorage.getItem("token");
 
+	console.log(assessmentInstanceId);
 	useEffect(() => {
-		const token = localStorage.getItem("token");
 		const newWs = new WebSocket(
 			`ws://localhost:8000/assessment-instance/${assessmentInstanceId}/start/token=${token}`
 		);
@@ -25,6 +26,9 @@ function GameScreen() {
 			if (data.event === "CONNECT") {
 				// append user to connectedUsers
 				setConnectedUsers((prev) => [...prev, {id: data.user_id, name: data.name}]);
+			} else if (data.event === "DISCONNECT") {
+				// remove user from connectedUsers
+				setConnectedUsers((prev) => prev.filter((user) => user.id !== data.user_id));
 			}
 
 			console.log(data);
@@ -50,8 +54,8 @@ function GameScreen() {
 		// 	return <ResultsScreen data={gameState} ws={ws} />;
 		case "END":
 			return <EndScreen data={gameState} ws={ws} testid={testId} />;
-		case "RANKING":
-			return <RankingScreen data={gameState} ws={ws} />;
+		// case "RANKING":
+		// 	return <RankingScreen data={gameState} ws={ws} />;
 		default:
 			console.log("Invalid game mode");
 			navigate("/error");

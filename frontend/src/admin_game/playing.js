@@ -49,7 +49,7 @@ function PlayingScreen({ data, ws, connectedUsers, assessmentInstanceId }) {
 			}
 			const data = await response.json();
 			setAssessmentInstance(data);
-			const gradingUsers = data.users.filter((user) => user.voteEveryone || user.group === data.actual_user.group);
+			const gradingUsers = data.users.filter((user) => (user.voteEveryone || user.group === data.actual_user.group) && user.id !== data.actual_user.id);
 			const filteredGradingUsers = gradingUsers.filter((user) => connectedUsers.some((connectedUser) => connectedUser.id === user.id));
 			filteredGradingUsers.forEach((user) => {
 				user.voted = false;
@@ -66,24 +66,42 @@ function PlayingScreen({ data, ws, connectedUsers, assessmentInstanceId }) {
 		fetchAssessmentInstance();
 	}, [fetchAssessmentInstance]);
 
-	ws.onmessage = (event) => {
-		const data = JSON.parse(event.data);
-		if (data.event === "REFRESH") {
-			fetchAssessmentInstance();
-		}
-		if (data.event === "VOTE") {
-			const user = currentGradingUsers.find((user) => user.id === data.user_id);
-			user.voted = true;
-			setCurrentGradingUsers([...currentGradingUsers]);
-		}
-		if(data.event === "FINISH") {
-			ws.send("CLOSE");
-			navigate(`/menu/assessment-instance/${assessmentInstanceId}`);
-		}
-		setGameState(data);
+	useEffect(() => {
+		ws.onmessage = (event) => {
+			const data = JSON.parse(event.data);
+			if (data.event === "REFRESH") {
+				fetchAssessmentInstance();
+			}
+			if (data.event === "VOTE") {
+				console.log(data);
+				console.log(currentGradingUsers);
+				const userIndex = currentGradingUsers.findIndex(user => user.id === data.user_id);
+				console.log(currentGradingUsers[userIndex]);
+				if (userIndex !== -1) {
+					const updatedGradingUsers = [...currentGradingUsers];
+					updatedGradingUsers[userIndex] = { ...updatedGradingUsers[userIndex], voted: true };
+					console.log(updatedGradingUsers);
+					setCurrentGradingUsers(updatedGradingUsers);
+					console.log(currentGradingUsers)// Actualiza el estado solo si es necesario
+				}
+			}
+			if(data.event === "FINISH") {
+				ws.send("CLOSE");
+				navigate(`/menu/assessment-instance/${assessmentInstanceId}`);
+			}
+			// if (data.event === "DISCONNECT") {
+			// 	// remove user from connectedUsers
+			// 	setConnectedUsers((prev) => prev.filter((user) => user.id !== data.user_id));
+			// }
+			setGameState(data);
 
-		console.log(data);
-	};
+			console.log(data);
+		};
+	}, [ws.onmessage]);
+
+	useEffect(() => {
+		console.log("currentGradingUsers updated", currentGradingUsers);
+	  }, [currentGradingUsers]);
 
 	return (
 		<div

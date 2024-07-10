@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import * as XLSX from  'xlsx';
+import {saveAs} from 'file-saver';
 
 function DetalleAssessmentInstance() {
 	const [assessmentInstance, setAssessmentInstance] = useState(null);
@@ -63,6 +65,90 @@ function DetalleAssessmentInstance() {
 		link.click();
 		document.body.removeChild(link);
 		URL.revokeObjectURL(url);
+	};
+
+	// handle export answers: return an xlsx file with the answers of the users in the assessment instance: column 1 is grading user name, column 2 is graded user name, column 3 is answer1 (with question.title as name), column 4 is answer2, etc.
+	const handleExportAnswers = async () => {
+		try {
+			const questionTitles = assessmentInstance.assessment.questions.map(q => q.title);
+
+			// Crear las columnas iniciales: Evaluador, Evaluado, ...Preguntas
+			const columns = ['Nombre de Evaluador', 'Nombre de Evaluado', ...questionTitles];
+
+			 // Agrupar las respuestas por evaluador y evaluado
+			const groupedAnswers = {};
+
+			assessmentInstance.answers.forEach(answer => {
+				const evaluatorId = answer.grading_user_id;
+				const evaluatedId = answer.graded_user_id;
+				if (!groupedAnswers[evaluatorId]) {
+					groupedAnswers[evaluatorId] = {};
+				}
+				if (!groupedAnswers[evaluatorId][evaluatedId]) {
+					groupedAnswers[evaluatorId][evaluatedId] = {};
+				}
+				groupedAnswers[evaluatorId][evaluatedId][answer.question_id] = answer.answerText;
+				});
+
+			 // Crear las filas con los datos
+			const rows = [];
+
+			Object.keys(groupedAnswers).forEach(evaluatorId => {
+				Object.keys(groupedAnswers[evaluatorId]).forEach(evaluatedId => {
+					const evaluator = assessmentInstance.users.find(user => user.id === parseInt(evaluatorId));
+					const evaluated = assessmentInstance.users.find(user => user.id === parseInt(evaluatedId));
+
+					// Rellenar la fila con los datos necesarios
+					const row = [
+					evaluator ? evaluator.name : '',
+					evaluated ? evaluated.name : '',
+					...assessmentInstance.assessment.questions.map(question => {
+						return groupedAnswers[evaluatorId][evaluatedId][question.id] || '';
+					})
+					];
+
+					rows.push(row);
+				});
+			});
+
+			const ws = XLSX.utils.aoa_to_sheet([columns, ...rows]);
+			const wb = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(wb, ws, 'Resultados');
+			const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+			const data = new Blob([excelBuffer], { type: 'application/octet-stream' });
+			saveAs(data, `${assessmentInstance.title}_resultados.xlsx`);
+		} catch (error) {
+			console.error("Fetch error:", error);
+			// Redireccionar a la página de error sin pasar el código de estado como parámetro
+			navigate("/error");
+		}
+	};
+
+	// handle export users: return a XLSX file with the users in the assessment instance: column 1 is name, column 2 is email, column 3 is order, column 4 is group, column 5 is pin, column 6 is voteEveryone
+	const handleExportUsers = async () => {
+		try {
+			const users = assessmentInstance.users;
+			const worksheet = XLSX.utils.aoa_to_sheet([
+				["Nombre", "Email", "Orden de presentacion", "Grupo", "PIN", "Vota a todos"],
+				...users.map((user) => [
+					user.name,
+					user.email,
+					user.order,
+					user.group,
+					user.pin,
+					user.voteEveryone,
+				]),
+			]);
+			const workbook = XLSX.utils.book_new();
+			XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+			const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: "array" });
+			const blob = new Blob([excelBuffer], { type: 'application/octet-stream' });
+			saveAs(blob, `${assessmentInstance.title}_usuarios.xlsx`);
+		} catch (error) {
+			console.error("Fetch error:", error);
+			// Redireccionar a la página de error sin pasar el código de estado como parámetro
+			navigate("/error");
+		}
 	};
 
 	const handleDelete = async () => {
@@ -188,9 +274,15 @@ function DetalleAssessmentInstance() {
 					</button>
 					<button
 						className="btn btn-primary mb-3"
-						onClick={handleExport}
+						onClick={handleExportUsers}
 					>
-						Exportar
+						Exportar Usuarios
+					</button>
+					<button
+						className="btn btn-primary mb-3"
+						onClick={handleExportAnswers}
+					>
+						Exportar resultados
 					</button>
 					<button
 						className="btn btn-danger mb-3"

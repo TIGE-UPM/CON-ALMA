@@ -68,11 +68,14 @@ function PlayingScreen({ data, ws }) {
 					answerText: "",
 				}));
 			}
-			setAnswers(initialAnswers);
-			setIsSubmitted(false);
+			// setAnswers(initialAnswers);
+			// setIsSubmitted(false);
 			if (data.answers && data.answers.length > 0) {
 				setAnswers(data.answers);
 				setIsSubmitted(true);
+			} else {
+				setAnswers(initialAnswers);
+				setIsSubmitted(false);
 			}
 		} catch (error) {
 			console.error("Fetch error:", error);
@@ -223,7 +226,6 @@ function PlayingScreen({ data, ws }) {
 							})}
 							<button
 								className="btn btn-success mb-3"
-								onClick={submitForm}
 								disabled={isSubmitted}
 							>
 								Guardar
