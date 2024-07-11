@@ -7,8 +7,6 @@ from sqlalchemy import create_engine, func, or_
 from sqlalchemy.orm import sessionmaker
 from typing import List, Optional, Literal
 import random
-import uuid
-import asyncio
 from dataclasses import dataclass
 from starlette.websockets import WebSocketState
 import json
@@ -19,9 +17,6 @@ from io import StringIO
 from .config import Settings
 
 from .db_config import Assessment, Question, AssessmentInstance, User, Answer
-
-# TODO remove this when done
-import pdb
 
 settings = Settings()
 
@@ -49,17 +44,6 @@ class JSON_Login(BaseModel):
 
 class JSON_User_Login(BaseModel):
 	pin: str
-
-# Modelos de los JSON de entrada
-# class JSON_Solution_Input(BaseModel):
-# 	question_id: int
-# 	answer_id: int
-# 	time: int
-
-# class JSON_Result_Input(BaseModel):
-# 	player_id: int
-# 	score: int
-# 	solutions: List[JSON_Solution_Input]
 
 class JSON_User_Input(BaseModel):
 	name: str
@@ -205,7 +189,6 @@ class ConnectionManager:
 		await websocket.send_text(message)
 
 	async def broadcast_admin(self, message: Json):
-		# pdb.set_trace()
 		for connection in self.active_connections:
 			if connection.is_admin is True:
 				await connection.websocket.send_text(message)
@@ -246,24 +229,6 @@ async def get_token_user_id(token: str):
 		raise HTTPException(status_code=401, detail="Eres administrador")
 	return token_payload.get('user_id')
 
-async def generate_short_token():
-	return str(uuid.uuid4())[:10]
-
-# async def count_games(test_id: int):
-# 	count = session.query(func.count(Game.id)).filter(Game.test_id == test_id).scalar()
-# 	if count is None:
-# 		count = 0
-# 	return count
-
-# async def count_users(game_id: int):
-# 	count = session.query(func.count(Result.id)).filter(Result.game_id == game_id).scalar()
-# 	if count is None:
-# 		count = 0
-# 	return count
-
-
-
-
 # RUTAS DE SESION
 @app.post("/login")
 async def login(input_data: JSON_Login):
@@ -276,28 +241,6 @@ async def login(input_data: JSON_Login):
 			return {"detail": "Autenticación como administrador exitosa", "token": token}
 		else:
 			raise HTTPException(status_code=401, detail="Nombre o contraseña incorrecta")
-
-# @app.post("/logout/token={token}")
-# async def logout(token: str, response: Response):
-# 	if not token:
-# 		raise HTTPException(status_code=401, detail="No se encontró token de sesión")
-
-# 	if token == ADMIN_TOKEN:
-# 		ADMIN_TOKEN = None
-# 	elif token in USERS_TOKEN:
-# 		del USERS_TOKEN[token]
-
-# 	return {"detail": "Sesión cerrada"}
-
-# @app.get("/session/token={token}")
-# async def actual_session(token: str):
-# 	if not token:
-# 		raise HTTPException(status_code=401, detail="No se encontró token de sesión")
-
-# 	if token == ADMIN_TOKEN:
-# 		return {"detail": "Sesión de administrador activa"}
-# 	elif token in USERS_TOKEN:
-# 		return {"detail": f"Sesión de jugador activa: {USERS_TOKEN[token]}"}
 
 # RUTAS DE ASSESSMENTS
 @app.get("/assessment/all/token={token}", response_model=List[JSON_Assessment_Full_Output])
@@ -619,7 +562,6 @@ async def create_assessment_instance(token: str, id: int, input_data: JSON_Asses
 @app.get("/assessment-instance/active/token={token}", response_model=JSON_AssessmentInstance_Output)
 async def get_active_assessment_instance(token: str):
 	try:
-		# pdb.set_trace()
 		token_is_admin = await (is_admin(token))
 		users_data = None
 		answers_data = None
@@ -667,7 +609,6 @@ async def get_active_assessment_instance(token: str):
 				key=lambda user: user.order
 			)
 		else:
-			# pdb.set_trace()
 			user_id = await get_token_user_id(token)
 			user = session.query(User).filter(User.id == user_id).first()
 			if not user:
@@ -698,7 +639,6 @@ async def get_active_assessment_instance(token: str):
 				)
 			)
 			if len(answers) > 0:
-				# filter answers to show only the user's answers
 				filtered_answers = [answer for answer in answers if (answer.grading_user_id == user.id and answer.graded_user_id == actual_user.id)]
 				answers_data = [
 					JSON_Answer_Output(
@@ -875,33 +815,6 @@ async def get_assessment_instance_by_ID(token: str, ID: int):
 		finally:
 			session.close()
 
-# export users in a XLSX file with the users in the assessment instance: column 1 is name, column 2 is email, column 3 is order, column 4 is group, column 5 is pin, column 6 is voteEveryone
-# @app.get("/assessment-instance/{ID}/users/export/token={token}")
-# async def export_users(token: str, ID: int):
-# 	await check_is_admin(token)
-# 	try:
-# 		assessmentInstance = session.query(Assessment
-# 			Instance).filter(AssessmentInstance.id == ID).first()
-# 		if not assessmentInstance:
-# 			raise HTTPException(status_code=404, detail="Evaluación no encontrada")
-
-# 		users = session.query(User).filter(User.assessment_instance_id == ID).all()
-# 		if not users:
-# 			raise HTTPException(status_code=404, detail="No hay usuarios en esta evaluación")
-
-# 		users_data = [
-# 			[user.name, user.email, user.order, user.group, user.pin, user.voteEveryone] for user in users
-# 		]
-
-# 		return users_data
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		raise HTTPException(status_code=500, detail=f"Error al exportar usuarios: {str(e)}")
-# 	finally:
-# 		session.close()
-
-
 def generate_unique_pin(session, assessment_instance_id: int) -> str:
 	while True:
 		pin = "".join([str(random.randint(0, 9)) for _ in range(6)])
@@ -1033,7 +946,6 @@ async def start_assessment_instance(websocket: WebSocket,id: int, token: str):
 async def next_user_assessment_instance(token: str):
 	await check_is_admin(token)
 	try:
-		# pdb.set_trace()
 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
 		if not assessmentInstance:
 			raise HTTPException(status_code=404, detail="No hay evaluación activa")
@@ -1183,73 +1095,3 @@ async def add_user_answer(token: str, input_data: JSON_User_Answer_Inputs):
 		raise HTTPException(status_code=500, detail=f"Error al guardar respuestas: {str(e)}")
 	finally:
 		session.close()
-
-# @app.get("/user/answers-summary/token={token}", response_model=JSON_AssessmentInstance_Output)
-# async def get_user_answers(token: str):
-# 	user_id = await get_token_user_id(token)
-# 	try:
-# 		assessmentInstance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
-# 		if not assessmentInstance:
-# 			raise HTTPException(status_code=404, detail="No hay evaluación activa")
-# 		# check if user is in this assessment instance
-# 		user = session.query(User).filter(User.id == user_id, User.assessment_instance_id == assessmentInstance.id).first()
-# 		if not user:
-# 			raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
-# 		answers = session.query(Answer).filter(Answer.assessment_instance_id == assessmentInstance.id, Answer.grading_user_id == user.id, Answer.graded_user_id == assessmentInstance.actual_user_id).all()
-# 		if not answers:
-# 			raise HTTPException(status_code=404, detail="No hay respuestas para este usuario")
-
-# 		assessment = session.query(Assessment).filter(Assessment.id == assessmentInstance.assessment_id).first()
-# 		if not assessment:
-# 			raise HTTPException(status_code=404, detail="Evaluación no encontrada")
-
-# 		questions_data = [
-# 			JSON_Question_Output(
-# 				id=question.id,
-# 				assessment_id=question.assessment_id,
-# 				title=question.title,
-# 				image=question.image,
-# 				questionType=question.questionType,
-# 				questionOrder=question.questionOrder,
-# 				selectOptions= [JSON_SelectOptions.from_dict(option) for option in question.selectOptions]
-# 			) for question in assessment.questions
-# 		]
-
-# 		answers_data = [
-# 			JSON_Answer_Output(
-# 				id=answer.id,
-# 				assessment_instance_id=answer.assessment_instance_id,
-# 				question_id=answer.question_id,
-# 				grading_user_id=answer.grading_user_id,
-# 				graded_user_id=answer.graded_user_id,
-# 				answerText=answer.answerText,
-# 				date=answer.date
-# 			) for answer in answers
-# 		]
-
-# 		assessmentInstance_data = JSON_AssessmentInstance_Output(
-# 			id=assessmentInstance.id,
-# 			title=assessmentInstance.title,
-# 			assessment_id=assessmentInstance.assessment_id,
-# 			users=None,
-# 			actual_user_id=assessmentInstance.actual_user_id,
-# 			active=assessmentInstance.active,
-# 			finished=assessmentInstance.finished,
-# 			answers=answers_data,
-# 			assessment=JSON_Assessment_Output(
-# 				id=assessment.id,
-# 				title=assessment.title,
-# 				image=assessment.image,
-# 				archived=assessment.archived,
-# 				questions=questions_data
-# 			)
-# 		)
-
-# 		return assessmentInstance_data
-# 	except HTTPException as e:
-# 		raise e
-# 	except Exception as e:
-# 		raise HTTPException(status_code=500, detail=f"Error al obtener respuestas: {str(e)}")
-# 	finally:
-# 		session.close()
