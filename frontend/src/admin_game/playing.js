@@ -2,7 +2,6 @@ import React, {useState, useCallback, useEffect} from "react";
 import { useNavigate } from "react-router-dom";
 
 function PlayingScreen({ data, ws, connectedUsers, assessmentInstanceId }) {
-	// Colores para las tarjetas
 	const colors = ["#FF7043", "#FFCA28", "#29B6F6", "#66BB6A"];
 	const navigate = useNavigate();
 	const [assessmentInstance, setAssessmentInstance] = useState(null);
@@ -42,7 +41,6 @@ function PlayingScreen({ data, ws, connectedUsers, assessmentInstanceId }) {
 				`http://localhost:8000/assessment-instance/active/token=${token}`
 			);
 			if (!response.ok) {
-				// Si el estado de la respuesta no es OK, arrojar un error con el código de estado
 				throw new Error(
 					`Error ${response.status}: ${response.statusText}`
 				);
@@ -53,6 +51,9 @@ function PlayingScreen({ data, ws, connectedUsers, assessmentInstanceId }) {
 			const filteredGradingUsers = gradingUsers.filter((user) => connectedUsers.some((connectedUser) => connectedUser.id === user.id));
 			filteredGradingUsers.forEach((user) => {
 				user.voted = false;
+				if (data.answers && data.answers.some((answer) => answer.grading_user_id === user.id && answer.graded_user_id === data.actual_user.id)) {
+					user.voted = true;
+				}
 			});
 			console.log(filteredGradingUsers);
 			setCurrentGradingUsers(filteredGradingUsers);
@@ -71,19 +72,6 @@ function PlayingScreen({ data, ws, connectedUsers, assessmentInstanceId }) {
 			const data = JSON.parse(event.data);
 			if (data.event === "REFRESH") {
 				fetchAssessmentInstance();
-			}
-			if (data.event === "VOTE") {
-				console.log(data);
-				console.log(currentGradingUsers);
-				const userIndex = currentGradingUsers.findIndex(user => user.id === data.user_id);
-				console.log(currentGradingUsers[userIndex]);
-				if (userIndex !== -1) {
-					const updatedGradingUsers = [...currentGradingUsers];
-					updatedGradingUsers[userIndex] = { ...updatedGradingUsers[userIndex], voted: true };
-					console.log(updatedGradingUsers);
-					setCurrentGradingUsers(updatedGradingUsers);
-					console.log(currentGradingUsers)// Actualiza el estado solo si es necesario
-				}
 			}
 			if(data.event === "FINISH") {
 				ws.send("CLOSE");
@@ -131,22 +119,26 @@ function PlayingScreen({ data, ws, connectedUsers, assessmentInstanceId }) {
 						<h3>No hay usuarios evaluando</h3>
 				</div>
 			): (
-				<table className="table table-borderless">
-					<thead>
-						<tr>
-							<th>Nombre</th>
-							<th>Ha evaluado</th>
-						</tr>
-					</thead>
-					<tbody>
-						{currentGradingUsers.map((user) => (
-							<tr key={user.id}>
-								<td>{user.name}</td>
-								<td>{user.voted ? "Si ✅" : "No ❌"}</td>
+				<div>
+					<h3 className="text-center">Usuarios que están evaluando</h3>
+					<h5 className="text-center">Evaluado: <strong>{currentGradingUsers.filter((user) => user.voted).length}</strong> (de un total de {currentGradingUsers.length})</h5>
+					<table className="table table-borderless text-center">
+						<thead>
+							<tr>
+								<th>Nombre</th>
+								<th>Ha evaluado</th>
 							</tr>
-						))}
-					</tbody>
-				</table>
+						</thead>
+						<tbody>
+							{currentGradingUsers.map((user) => (
+								<tr key={user.id}>
+									<td>{user.name}</td>
+									<td>{user.voted ? "Si ✅" : "No ❌"}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
 			)}
 
 			{/* <div className="row mb-2">
