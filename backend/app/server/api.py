@@ -1001,7 +1001,8 @@ async def login(input_data: JSON_User_Login):
 	active_assessment_instance = session.query(AssessmentInstance).filter(AssessmentInstance.active == True).first()
 	if not active_assessment_instance:
 		raise HTTPException(status_code=404, detail="No hay evaluación activa")
-	user = session.query(User).filter(User.pin == input_data.pin, User.assessment_instance_id == active_assessment_instance.id).first()
+	trim_pin = input_data.pin.strip()
+	user = session.query(User).filter(User.pin == trim_pin, User.assessment_instance_id == active_assessment_instance.id).first()
 	if not user:
 		raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
