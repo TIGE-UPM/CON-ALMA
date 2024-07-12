@@ -13,8 +13,9 @@ function GameScreen() {
 	const [ws, setWs] = useState(null);
 
 	useEffect(() => {
-		const wsUrl = `ws://localhost:8000/play/token=${token}`;
-		// const wsUrl = `ws://${process.env.REACT_APP_IP}:8000/play/token=${token}`;
+		// const wsUrl = `ws://localhost:8000/play/token=${token}`;
+		// console.log(process.env.REACT_APP_IP);
+		const wsUrl = `ws://${process.env.REACT_APP_IP}:8000/play/token=${token}`;
 		console.log(wsUrl);
 
 		const newWs = new WebSocket(wsUrl);

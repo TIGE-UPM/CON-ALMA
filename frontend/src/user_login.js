@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 
 function UserLogin() {
 	const [pin, setPin] = useState("");
-	const [password, setPassword] = useState("");
 	const [error, setError] = useState("");
 	const navigate = useNavigate();
 
@@ -12,7 +11,9 @@ function UserLogin() {
 		setError("");
 
 		try {
-			const response = await fetch("http://localhost:8000/user-login/", {
+			// const response = await fetch("http://localhost:8000/user-login/",
+			const response = await fetch(`http://${process.env.REACT_APP_IP}:8000/user-login/`,
+			{
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -21,7 +22,7 @@ function UserLogin() {
 			});
 
 			const data = await response.json();
-
+			console.log(data);
 			if (response.ok) {
 				localStorage.setItem("token", data.token);
 				navigate("/menu/assessment");

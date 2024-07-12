@@ -24,7 +24,8 @@ function PlayingScreen({ data, ws }) {
 				answers,
 			}
 			const response = await fetch(
-				`http://localhost:8000/user/answer/token=${token}`,
+				// `http://localhost:8000/user/answer/token=${token}`,
+				`http://${process.env.REACT_APP_IP}:8000/user/answer/token=${token}`,
 				{
 					method: "POST",
 					headers: {
@@ -50,7 +51,8 @@ function PlayingScreen({ data, ws }) {
 	const fetchAssessmentInstance = useCallback(async () => {
 		try {
 			const response = await fetch(
-				`http://localhost:8000/assessment-instance/active/token=${token}`
+				// `http://localhost:8000/assessment-instance/active/token=${token}`
+				`http://${process.env.REACT_APP_IP}:8000/assessment-instance/active/token=${token}`
 			);
 			if (!response.ok) {
 				// Si el estado de la respuesta no es OK, arrojar un error con el código de estado
