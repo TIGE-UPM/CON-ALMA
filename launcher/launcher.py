@@ -21,9 +21,9 @@ def obtener_y_escribir_ip():
 		ip = '127.0.0.1'
 	finally:
 		s.close()
-	
 
-	ruta_env_frontend = "./LoGaQuizz_Neo/frontend/.env"
+
+	ruta_env_frontend = "./AgoraEval/frontend/.env"
 	try:
 		with open(ruta_env_frontend, "w") as file:
 			file.write(f"REACT_APP_IP={ip}\n")
@@ -32,11 +32,11 @@ def obtener_y_escribir_ip():
 		print("\nHubo un error al escribir en el archivo .env del frontend.")
 
 def modificar_credenciales_admin(nuevo_usuario, nueva_contrasena):
-	ruta_api = "./LoGaQuizz_Neo/backend/app/server/api.py"
+	ruta_api = "./AgoraEval/backend/app/server/api.py"
 	try:
 		with open(ruta_api, "r") as file:
 			contenido = file.readlines()
-		
+
 		admin_changed = False
 		password_changed = False
 		with open(ruta_api, "w") as file:
@@ -55,16 +55,16 @@ def modificar_credenciales_admin(nuevo_usuario, nueva_contrasena):
 def mostrar_info_admin():
 	user, password = "No encontrado", "No encontrado"
 	try:
-		with open("./LoGaQuizz_Neo/backend/app/server/api.py", "r") as file:
+		with open("./AgoraEval/backend/app/server/api.py", "r") as file:
 			for line in file:
 				if "ADMIN_USER" in line and user == "No encontrado":
 					user = line.split('=')[1].strip().replace('"', '').replace("'", "")
-					
+
 				elif "ADMIN_PASSWORD" in line and password == "No encontrado":
 					password =  line.split('=')[1].strip().replace('"', '').replace("'", "")
 	except IOError:
 		print("No se pudo leer la configuración del administrador.")
-	
+
 	obtener_y_escribir_ip()
 	print("\nInformación del administrador")
 	print(f"Usuario: {user}")
@@ -72,7 +72,7 @@ def mostrar_info_admin():
 	cambiar = input("\n¿Desea cambiar estas credenciales? (y/n): ")
 	if cambiar.lower() == 'y':
 		cambiar_credenciales()
-	
+
 def cambiar_credenciales():
 	nuevo_usuario = input("Ingrese el nuevo usuario: ")
 	nueva_contrasena = input("Ingrese la nueva contraseña: ")
@@ -92,11 +92,11 @@ def lanzar_comandos_en_paralelo():
 	comando_backend = "python ./app/main.py"
 
 	# Directorios de trabajo para cada comando
-	dir_frontend = "./LoGaQuizz_Neo/frontend"
-	dir_backend = "./LoGaQuizz_Neo/backend"
+	dir_frontend = "./AgoraEval/frontend"
+	dir_backend = "./AgoraEval/backend"
 
 	# Verificar si existe local.db y generarla si no existe
-	if not os.path.isfile("./LoGaQuizz_Neo/backend/app/db/local.db"):
+	if not os.path.isfile("./AgoraEval/backend/app/db/local.db"):
 		generar_base_de_datos()
 
 	# Dispositivo nulo para redirigir la salida
@@ -112,7 +112,7 @@ def lanzar_comandos_en_paralelo():
 	# Esperar a que ambos procesos terminen
 	proceso_frontend.wait()
 	proceso_backend.wait()
-	
+
 def opcion_iniciar():
 	mostrar_info_admin()
 	cambiar = input("\n¿Desea cambiar estas credenciales? (y/n): ")
@@ -123,7 +123,7 @@ def opcion_iniciar():
 def menu_existente():
 	while True:
 		limpiar_consola()
-		print("\nBienvenido a LoGaQuizz_Neo . Elige una opción:")
+		print("\nBienvenido a AgoraEval . Elige una opción:")
 		print("1. Iniciar programa")
 		print("2. Reinstalar/Reparar")
 		print("3. Eliminar programa")
@@ -163,7 +163,7 @@ def limpiar_consola():
 		_ = os.system('clear')
 
 def eliminar_programa():
-	ruta = "./LoGaQuizz_Neo"
+	ruta = "./AgoraEval"
 
 	def manejar_errores(func, path, exc_info):
 		"""
@@ -176,19 +176,19 @@ def eliminar_programa():
 		else:
 			raise
 
-	confirmacion = input("¿Estás seguro de que quieres eliminar LoGaQuizz_Neo? (y/n): ")
+	confirmacion = input("¿Estás seguro de que quieres eliminar AgoraEval? (y/n): ")
 	if confirmacion.lower() == 'y':
 		if os.path.isdir(ruta):
 			shutil.rmtree(ruta, onerror=manejar_errores)
 			print("Programa eliminado correctamente.")
 		else:
-			print("No se encontró la carpeta LoGaQuizz_Neo.")
+			print("No se encontró la carpeta AgoraEval.")
 	else:
 		print("Eliminación cancelada.")
 
 def preguntar_instalar():
 	if not existe_carpeta_logaquizz():
-		respuesta = input("La carpeta LoGaQuizz_Neo no existe. ¿Desea instalar el programa? (y/n): ")
+		respuesta = input("La carpeta AgoraEval no existe. ¿Desea instalar el programa? (y/n): ")
 		if respuesta.lower() == 'y':
 			instalar_backend()
 			instalar_frontend()
@@ -196,50 +196,50 @@ def preguntar_instalar():
 		menu_existente()
 
 def existe_carpeta_logaquizz():
-	return os.path.isdir("./LoGaQuizz_Neo")
+	return os.path.isdir("./AgoraEval")
 
 def generar_base_de_datos():
 	comando_db = "python app/server/db_config.py"
 
-	subprocess.call(comando_db, shell=True, cwd="./LoGaQuizz_Neo/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
+	subprocess.call(comando_db, shell=True, cwd="./AgoraEval/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
 	print("Base de datos local.db creada.")
 
 def instalar_backend():
-	if not os.path.isdir("./LoGaQuizz_Neo/backend"):
-		
-		
+	if not os.path.isdir("./AgoraEval/backend"):
+
+
 		print("Clonando el repositorio...")
-		subprocess.call("git clone https://github.com/drosell271/LoGaQuizz_Neo", shell=True, stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
+		subprocess.call("git clone https://github.com/drosell271/AgoraEval", shell=True, stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
 
 		print("Creando entorno virtual...")
-		subprocess.call("python -m venv venv", shell=True, cwd="./LoGaQuizz_Neo/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
+		subprocess.call("python -m venv venv", shell=True, cwd="./AgoraEval/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
 
 		print("Activando entorno virtual")
 		if os.name == 'nt':  # Windows
-			subprocess.call(".\\venv\\Scripts\\activate", shell=True, cwd="./LoGaQuizz_Neo/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
+			subprocess.call(".\\venv\\Scripts\\activate", shell=True, cwd="./AgoraEval/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
 		else:  # Unix (Linux, macOS)
-			subprocess.call("source ./venv/bin/activate", shell=True, cwd="./LoGaQuizz_Neo/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
+			subprocess.call("source ./venv/bin/activate", shell=True, cwd="./AgoraEval/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
 
 		print("Actualizando pip...")
-		subprocess.call("python -m pip install --upgrade pip", shell=True, cwd="./LoGaQuizz_Neo/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
-		
+		subprocess.call("python -m pip install --upgrade pip", shell=True, cwd="./AgoraEval/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
+
 		print("Instalando dependencias del backend...")
-		subprocess.call("pip install -r requeriments.txt", shell=True, cwd="./LoGaQuizz_Neo/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
-		
+		subprocess.call("pip install -r requeriments.txt", shell=True, cwd="./AgoraEval/backend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
+
 	else:
 		print("El backend ya está configurado.")
 
 def instalar_frontend():
 	print("Instalando dependencias del frontend...")
 
-	subprocess.call("npm i", shell=True, cwd="./LoGaQuizz_Neo/frontend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
-	
+	subprocess.call("npm i", shell=True, cwd="./AgoraEval/frontend", stdout=open(null_device, 'w'), stderr=open(null_device, 'w'))
+
 def preguntar_instalar():
 	# Registrar el handler para la señal SIGINT
 	signal.signal(signal.SIGINT, signal_handler)
 
 	if not existe_carpeta_logaquizz():
-		respuesta = input("La carpeta LoGaQuizz_Neo no existe. ¿Desea instalar el programa? (y/n): ")
+		respuesta = input("La carpeta AgoraEval no existe. ¿Desea instalar el programa? (y/n): ")
 		if respuesta.lower() == 'y':
 			instalar_backend()
 			instalar_frontend()
