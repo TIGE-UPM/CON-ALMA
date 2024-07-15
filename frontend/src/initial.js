@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 
 function Initial() {
 	const [pin, setPin] = useState(0);
-	const [name, setName] = useState("");
 	const [error, setError] = useState("");
 	const navigate = useNavigate();
 
@@ -11,7 +10,9 @@ function Initial() {
 		e.preventDefault();
 		setError("");
 		try {
-			const response = await fetch("http://localhost:8000/user-login/", {
+			const response = await fetch(`http://${process.env.REACT_APP_IP}:8000/user-login/`,
+			{
+			// const response = await fetch("http://localhost:8000/user-login/", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
