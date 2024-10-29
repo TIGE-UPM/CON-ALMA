@@ -1,6 +1,6 @@
-# LoGaQuizz Neo 🎓
+# CON-ALMA 🎓
 
-Aplicación educativa interactiva y versátil que mejora la experiencia de aprendizaje de los estudiantes y facilita las tareas de enseñanza para los profesores en un entorno digital
+Herramienta de coevaluación en arquitecturas locales. Se trata de una aplicación educativa interactiva y versátil que mejora la experiencia de aprendizaje de los estudiantes y facilita las tareas de enseñanza para los profesores en un entorno digital
 
 ![Imagen de menu](images/Menu.png)
 
